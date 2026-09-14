@@ -1115,28 +1115,39 @@ function budujMiasto() {
 }
 
 const PALETA_BUD = [
-  ['#8C7B6B', '#FFE9B8'], ['#6E7480', '#FFF0C4'], ['#9A6E62', '#FFE6A8'],
-  ['#77836E', '#F7EDC0'], ['#5E6672', '#FFE8AE'], ['#A08B72', '#FFF2CC'],
-  ['#6B5F73', '#FFE4A0'], ['#846A5C', '#FFEFC0']
+  ['#8C7B6B', '#FFE9B8', '#4E4239'], ['#6E7480', '#FFF0C4', '#3C4048'],
+  ['#9A6E62', '#FFE6A8', '#503A32'], ['#77836E', '#F7EDC0', '#3F4737'],
+  ['#5E6672', '#FFE8AE', '#33383E'], ['#A08B72', '#FFF2CC', '#564836'],
+  ['#6B5F73', '#FFE4A0', '#39323E'], ['#846A5C', '#FFEFC0', '#463830']
 ];
-let MAT_BUD = null;
-function texBudynek(kolorBazowy, okna) {
+/* okno co ok. 4,4 m niezależnie od rozmiaru budynku — bez rozciągania tekstury */
+const KAFEL_OKNA = 4.4;
+const CACHE_MAT_BUD = {};
+function texBudynek(kolorBazowy, okno, bx, by) {
   const c = nowyCanvas(256), g = c.getContext('2d');
   g.fillStyle = kolorBazowy; g.fillRect(0, 0, 256, 256);
-  for (let y = 16; y < 240; y += 34)
-    for (let x = 14; x < 240; x += 30) {
-      g.fillStyle = Math.random() < .35 ? okna : 'rgba(20,24,30,.82)';
-      g.fillRect(x, y, 18, 22);
-      g.fillStyle = 'rgba(255,255,255,.05)'; g.fillRect(x, y, 18, 4);
+  const mx = 256 / bx, my = 256 / by;
+  for (let cx = 0; cx < bx; cx++)
+    for (let cy = 0; cy < by; cy++) {
+      const swieci = Math.random() < 0.3;
+      const ox = cx * mx + mx * 0.2, oy = cy * my + my * 0.16;
+      const ow = mx * 0.6, oh = my * 0.66;
+      g.fillStyle = swieci ? okno : 'rgba(18,22,27,.86)';
+      g.fillRect(ox, oy, ow, oh);
+      g.fillStyle = 'rgba(255,255,255,.09)'; g.fillRect(ox, oy, ow, oh * 0.14);
+      g.strokeStyle = 'rgba(0,0,0,.22)'; g.lineWidth = 1.4; g.strokeRect(ox, oy, ow, oh);
     }
-  const t = new THREE.CanvasTexture(c);
-  t.wrapS = t.wrapT = THREE.RepeatWrapping;
-  return t;
+  return new THREE.CanvasTexture(c);
 }
-function materialyBudynkow() {
-  if (!MAT_BUD) MAT_BUD = PALETA_BUD.map(([k, o]) =>
-    new THREE.MeshLambertMaterial({ map: texBudynek(k, o) }));
-  return MAT_BUD;
+function materialBudynku(paletaIdx, w, h, d) {
+  const bx = kl(Math.round(((w + d) / 2) / KAFEL_OKNA), 2, 9);
+  const by = kl(Math.round(h / KAFEL_OKNA), 2, 11);
+  const klucz = paletaIdx + '_' + bx + '_' + by;
+  if (!CACHE_MAT_BUD[klucz]) {
+    const [kol, okno] = PALETA_BUD[paletaIdx];
+    CACHE_MAT_BUD[klucz] = new THREE.MeshLambertMaterial({ map: texBudynek(kol, okno, bx, by) });
+  }
+  return CACHE_MAT_BUD[klucz];
 }
 
 function budujKwartal(G, cx, cz, bok, i, j) {
@@ -1158,12 +1169,28 @@ function budujKwartal(G, cx, cz, bok, i, j) {
   }
 }
 function postawBudynek(G, x, z, w, d, h) {
-  const mat = losEl(materialyBudynkow());
+  const paletaIdx = Math.floor(Math.random() * PALETA_BUD.length);
+  const mat = materialBudynku(paletaIdx, w, h, d);
   const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat);
   m.position.set(x, h / 2 + 0.34, z); m.castShadow = true; m.receiveShadow = true; G.add(m);
+
+  /* ciemny cokół u podstawy — sugeruje parter i wizualnie „sadowi” budynek na ziemi */
+  const cokolH = Math.min(2.4, h * 0.2);
+  const cokol = new THREE.Mesh(new THREE.BoxGeometry(w + 0.18, cokolH, d + 0.18),
+    new THREE.MeshLambertMaterial({ color: PALETA_BUD[paletaIdx][2] }));
+  cokol.position.set(x, cokolH / 2 + 0.3, z); cokol.receiveShadow = true; G.add(cokol);
+
   const dach = new THREE.Mesh(new THREE.BoxGeometry(w + 0.8, 0.7, d + 0.8),
-    new THREE.MeshLambertMaterial({ color: 0x3A3D42 }));
+    new THREE.MeshLambertMaterial({ color: 0x33363B }));
   dach.position.set(x, h + 0.65, z); G.add(dach);
+
+  /* co kilka budynków — nadbudówka na dachu, żeby sylwetka miasta nie była płaska */
+  if (Math.random() < 0.32 && h > 18) {
+    const nad = new THREE.Mesh(new THREE.BoxGeometry(w * 0.24, 1.5, d * 0.24),
+      new THREE.MeshLambertMaterial({ color: 0x565C64 }));
+    nad.position.set(x + losuj(-w * 0.18, w * 0.18), h + 1.6, z + losuj(-d * 0.18, d * 0.18));
+    nad.castShadow = true; G.add(nad);
+  }
   return { x, z, w, d, h };
 }
 function drzewo(G, x, z) {
@@ -1522,8 +1549,8 @@ function fizykaAuta(dt) {
   const maxSkret = 0.58 / (1 + Math.abs(auto.v) * 0.085);
   const tempo = 3.4;
   let cel = 0;
-  if (KLAWISZE.lewo) cel += maxSkret;
-  if (KLAWISZE.prawo) cel -= maxSkret;
+  if (KLAWISZE.lewo) cel -= maxSkret;
+  if (KLAWISZE.prawo) cel += maxSkret;
   auto.skret += (cel - auto.skret) * Math.min(1, tempo * dt);
   if (!KLAWISZE.lewo && !KLAWISZE.prawo) auto.skret *= Math.max(0, 1 - 6 * dt);
 
@@ -1581,23 +1608,32 @@ function punktPasa(i, j, d, przed) {
   return { x: px, z: pz };
 }
 
+function dodajAutoAI(i, j, d, przedOpc) {
+  const a = {
+    i, j, d,
+    mesh: zbudujAuto(losEl(KOLORY_AUT), false),
+    v: losuj(6, 11), vDoc: losuj(8, 13),
+    faza: 'dojazd', czekaj: 0
+  };
+  const p = punktPasa(i, j, d, przedOpc !== undefined ? przedOpc : losuj(14, SP - 18));
+  a.x = p.x; a.z = p.z; a.kier = dirKat(d);
+  wyznaczCelAI(a);
+  ruch.push(a);
+  return a;
+}
+
 function stworzRuch(ile) {
   while (ruch.length) { const stary = ruch.pop(); scena.remove(stary.mesh); }
   for (let n = 0; n < ile; n++) {
     const i = Math.floor(losuj(0, NG)), j = Math.floor(losuj(0, NG));
-    const d = Math.floor(losuj(0, 4));
-    const a = {
-      i, j, d,
-      mesh: zbudujAuto(losEl(KOLORY_AUT), false),
-      v: losuj(6, 11), vDoc: losuj(7, 12),
-      faza: 'dojazd',
-      czekaj: 0
-    };
-    const p = punktPasa(i, j, d, losuj(18, SP - 24));
-    a.x = p.x; a.z = p.z; a.kier = dirKat(d);
-    wyznaczCelAI(a);
-    ruch.push(a);
+    dodajAutoAI(i, j, Math.floor(losuj(0, 4)));
   }
+  /* dosyt: żadne skrzyżowanie nie może zostać puste — miasto ma tętnić ruchem */
+  for (let i = 0; i < NG; i++)
+    for (let j = 0; j < NG; j++) {
+      const jest = ruch.some(a => Math.abs(a.x - P(i)) < 46 && Math.abs(a.z - P(j)) < 46);
+      if (!jest) dodajAutoAI(i, j, Math.floor(losuj(0, 4)), losuj(10, SP - 30));
+    }
 }
 
 function wyznaczCelAI(a) {
@@ -1997,15 +2033,17 @@ function ocenJazde(dt, kmh) {
     if (skPrz) {
       const wyjazd = d, wjazd = sedzia.kierWjazdu;
       const roznica = (wyjazd - wjazd + 4) % 4;
-      if (roznica === 3 && skPrz.zakazLewo)
-        wykroczenie('zakazlewo', 'Skręt wbrew znakowi B-21',
+      /* roznica: 0=prosto, 1=skręt w prawo, 2=zawrócenie (180°), 3=skręt w lewo.
+         Zwykły skręt w lewo (3) NIE jest zawracaniem — karzemy go tylko
+         wtedy, gdy stał tam znak B-21. Samo zawrócenie (2) karzemy jedynie
+         przy tym samym znaku, bo B-21 zabrania też zawracania. */
+      if ((roznica === 3 || roznica === 2) && skPrz.zakazLewo)
+        wykroczenie('zakazlewo',
+          roznica === 2 ? 'Zawrócenie wbrew znakowi B-21' : 'Skręt wbrew znakowi B-21',
           'Przed skrzyżowaniem stał znak „zakaz skręcania w lewo”. Obowiązuje on na najbliższym skrzyżowaniu i zabrania również zawracania.', 18, true);
       if (roznica === 1 && skPrz.zakazPrawo)
         wykroczenie('zakazprawo', 'Skręt wbrew znakowi B-22',
           'Znak B-22 zabraniał skrętu w prawo na tym skrzyżowaniu. Trzeba było pojechać prosto i zawrócić w dozwolonym miejscu.', 18, true);
-      if (roznica === 2)
-        wykroczenie('zawracanie', 'Zawracanie na skrzyżowaniu',
-          'Zawróciłeś na skrzyżowaniu. To manewr dopuszczalny tylko wtedy, gdy nie zabrania go znak i gdy nie utrudnia ruchu — tutaj było ryzykowne.', 6);
     }
   }
 
@@ -2116,126 +2154,126 @@ function zapowiedzSkrzyzowanie(sk, d) {
    MISJE
    ============================================================ */
 const MISJE = [
-  { nazwa: 'Pierwsze metry', trudnosc: 1, ruch: 4, piesi: 4,
+  { nazwa: 'Pierwsze metry', trudnosc: 1, ruch: 14, piesi: 4,
     opis: 'Poznaj reakcje samochodu. Dojedź prosto ulicą Piastowską do wskazanego skrzyżowania i zatrzymaj się na nim.',
     start: { i: 1, j: 2, d: 0 }, cel: { i: 4, j: 2 },
     wskazowki: ['Strzałka ↑ dodaje gazu, ↓ hamuje. Po puszczeniu gazu auto toczy się dalej — to bezwładność.',
       'Kierownica działa tylko podczas jazdy, a im szybciej jedziesz, tym mniej auto skręca.',
       'Cel uznaje się za osiągnięty po zatrzymaniu się w jego obrębie.'] },
 
-  { nazwa: 'Skręt w prawo', trudnosc: 1, ruch: 6, piesi: 6,
+  { nazwa: 'Skręt w prawo', trudnosc: 1, ruch: 16, piesi: 6,
     opis: 'Przećwicz skręt w prawo. Skręcając, zawsze jedziesz blisko prawej krawędzi i ustępujesz pieszym na przejściu.',
     start: { i: 2, j: 1, d: 1 }, cel: { i: 5, j: 3 },
     wskazowki: ['Przed skrętem zwolnij do około 20 km/h — w łuku nie hamuje się gwałtownie.',
       'Skręcając w prawo, ustępujesz pieszemu przechodzącemu przez jezdnię, w którą wjeżdżasz.',
       'Po skręcie wracasz na prawy pas nowej ulicy.'] },
 
-  { nazwa: 'Skręt w lewo', trudnosc: 2, ruch: 8, piesi: 6,
+  { nazwa: 'Skręt w lewo', trudnosc: 2, ruch: 18, piesi: 6,
     opis: 'Skręt w lewo wymaga przecięcia toru jazdy pojazdów z naprzeciwka. Wykonaj go spokojnie i bezpiecznie.',
     start: { i: 5, j: 4, d: 2 }, cel: { i: 2, j: 1 },
     wskazowki: ['Skręcając w lewo, ustępujesz pierwszeństwa pojazdom jadącym z przeciwka na wprost.',
       'Nie ścinaj zakrętu — środek skrzyżowania omijasz tak, by nie wjechać na przeciwny pas.',
       'Jeśli nie masz pewności, że zdążysz, poczekaj. Pośpiech na skrzyżowaniu kosztuje najwięcej.'] },
 
-  { nazwa: 'Znak STOP', trudnosc: 2, ruch: 10, piesi: 6,
+  { nazwa: 'Znak STOP', trudnosc: 2, ruch: 20, piesi: 6,
     opis: 'Na trasie napotkasz znaki B-20. Każdy z nich wymaga całkowitego zatrzymania pojazdu przed linią.',
     start: { i: 1, j: 4, d: 0 }, cel: { i: 4, j: 5 },
     wskazowki: ['Zatrzymanie oznacza prędkość zero — prędkościomierz musi pokazać 0 km/h.',
       'Zatrzymujesz się przed linią, a jeśli jej nie widzisz, przed samym skrzyżowaniem.',
       'Po zatrzymaniu ruszasz dopiero wtedy, gdy masz pewność, że droga jest wolna.'] },
 
-  { nazwa: 'Ustąp pierwszeństwa', trudnosc: 2, ruch: 12, piesi: 6,
+  { nazwa: 'Ustąp pierwszeństwa', trudnosc: 2, ruch: 22, piesi: 6,
     opis: 'Znak A-7 nie każe się zatrzymywać, ale każe ustąpić. Naucz się rozpoznawać, kiedy trzeba stanąć, a kiedy można płynnie wjechać.',
     start: { i: 5, j: 1, d: 3 }, cel: { i: 2, j: 3 },
     wskazowki: ['„Ustąpić pierwszeństwa” to nie zmusić innego kierującego do hamowania lub zmiany kierunku.',
       'Do znaku A-7 dojeżdżaj z prędkością pozwalającą na zatrzymanie — zwykle 15–20 km/h.',
       'Tabliczka T-6a pod znakiem pokazuje, którędy biegnie droga z pierwszeństwem.'] },
 
-  { nazwa: 'Sygnalizacja świetlna', trudnosc: 2, ruch: 12, piesi: 8,
+  { nazwa: 'Sygnalizacja świetlna', trudnosc: 2, ruch: 22, piesi: 8,
     opis: 'Przejedź przez skrzyżowania z sygnalizacją. Na czerwonym stój przed linią, na żółtym zatrzymaj się, jeśli możesz to zrobić bezpiecznie.',
     start: { i: 3, j: 1, d: 1 }, cel: { i: 3, j: 5 },
     wskazowki: ['Żółte po zielonym oznacza: zatrzymaj się, chyba że jesteś już zbyt blisko linii.',
       'Sygnalizacja ma pierwszeństwo przed znakami pierwszeństwa — znaki obowiązują, gdy światła są wyłączone.',
       'Zielone nie oznacza „jedź bez patrzenia” — najpierw upewnij się, że skrzyżowanie jest wolne.'] },
 
-  { nazwa: 'Przejścia dla pieszych', trudnosc: 2, ruch: 10, piesi: 16,
+  { nazwa: 'Przejścia dla pieszych', trudnosc: 2, ruch: 20, piesi: 16,
     opis: 'Miasto pełne pieszych. Przećwicz podjeżdżanie do przejść i ustępowanie pierwszeństwa.',
     start: { i: 0, j: 3, d: 0 }, cel: { i: 5, j: 3 },
     wskazowki: ['Pieszy ma pierwszeństwo na przejściu i wchodząc na nie. Zatrzymaj się przed pasami.',
       'Przed przejściem i na nim obowiązuje bezwzględny zakaz wyprzedzania.',
       'Znak D-6 oznacza przejście, a A-16 uprzedza o nim wcześniej.'] },
 
-  { nazwa: 'Strefa 30', trudnosc: 2, ruch: 10, piesi: 12,
+  { nazwa: 'Strefa 30', trudnosc: 2, ruch: 20, piesi: 12,
     opis: 'Ulica Kwiatowa ma ograniczenie do 30 km/h. Utrzymaj prędkość przez cały odcinek.',
     start: { i: 1, j: 0, d: 1 }, cel: { i: 1, j: 5 },
     wskazowki: ['Znak B-33 obowiązuje do najbliższego skrzyżowania albo do znaku odwołującego B-34.',
       'W obszarze zabudowanym limit podstawowy to 50 km/h przez całą dobę.',
       'Płynna jazda na stałej prędkości zużywa mniej paliwa niż szarpanie gazem.'] },
 
-  { nazwa: 'Zakaz wjazdu', trudnosc: 3, ruch: 12, piesi: 10,
+  { nazwa: 'Zakaz wjazdu', trudnosc: 3, ruch: 22, piesi: 10,
     opis: 'Ulica Jaśminowa jest jednokierunkowa. Dojedź do celu, nie wjeżdżając w nią pod prąd.',
     start: { i: 3, j: 5, d: 0 }, cel: { i: 6, j: 2 },
     wskazowki: ['Znak B-2 „zakaz wjazdu” najczęściej stoi na wylocie ulicy jednokierunkowej.',
       'Znak D-3 od strony wjazdu potwierdza, że jedziesz zgodnie z kierunkiem ruchu.',
       'Na drodze jednokierunkowej wolno wyprzedzać również prawą stroną.'] },
 
-  { nazwa: 'Zakazy skrętu', trudnosc: 3, ruch: 14, piesi: 10,
+  { nazwa: 'Zakazy skrętu', trudnosc: 3, ruch: 24, piesi: 10,
     opis: 'Na trasie stoją znaki B-21 i B-22. Zaplanuj przejazd tak, by nie skręcić tam, gdzie nie wolno.',
     start: { i: 0, j: 5, d: 0 }, cel: { i: 4, j: 1 },
     wskazowki: ['Znak zakazu skrętu obowiązuje na najbliższym skrzyżowaniu za znakiem.',
       'Zakaz skrętu w lewo oznacza też zakaz zawracania.',
       'Gdy przegapisz zjazd, nie kombinuj — objedź kwartał.'] },
 
-  { nazwa: 'Droga z pierwszeństwem', trudnosc: 3, ruch: 16, piesi: 10,
+  { nazwa: 'Droga z pierwszeństwem', trudnosc: 3, ruch: 26, piesi: 10,
     opis: 'Przejedź ulicą Wolności — drogą z pierwszeństwem. Sprawdź, czy potrafisz jechać płynnie, nie tracąc czujności.',
     start: { i: 0, j: 3, d: 0 }, cel: { i: 6, j: 3 },
     wskazowki: ['Żółty romb D-1 oznacza, że masz pierwszeństwo aż do znaku D-2.',
       'Pierwszeństwo nie zwalnia z ostrożności — ktoś może go nie ustąpić.',
       'Pierwszeństwo nigdy nie działa wobec pieszego na przejściu.'] },
 
-  { nazwa: 'Parkowanie', trudnosc: 3, ruch: 8, piesi: 8, typ: 'parking',
+  { nazwa: 'Parkowanie', trudnosc: 3, ruch: 18, piesi: 8, typ: 'parking',
     opis: 'Dojedź do miejsca oznaczonego znakiem D-18 i zaparkuj równolegle do krawężnika, w obrębie linii.',
     start: { i: 1, j: 0, d: 1 }, parking: 0,
     wskazowki: ['Manewruj powoli — przy parkowaniu liczy się precyzja, nie tempo.',
       'Strzałka ↓ przy zatrzymanym aucie włącza bieg wsteczny.',
       'Auto musi stanąć w obrębie linii, równolegle do krawężnika, z prędkością zero.'] },
 
-  { nazwa: 'Przez pół miasta', trudnosc: 3, ruch: 18, piesi: 14,
+  { nazwa: 'Przez pół miasta', trudnosc: 3, ruch: 28, piesi: 14,
     opis: 'Dłuższa trasa z kilkoma zmianami kierunku. Trzymaj się mapy i czytaj znaki na bieżąco.',
     start: { i: 0, j: 0, d: 0 }, cel: { i: 5, j: 5 },
     wskazowki: ['Zielona linia na mapie pokazuje sugerowaną trasę — nie jest obowiązkowa.',
       'Planuj manewr wcześniej: pas i prędkość dobiera się przed skrzyżowaniem, nie na nim.',
       'Jeśli zgubisz drogę, zatrzymaj się w bezpiecznym miejscu i spójrz na mapę.'] },
 
-  { nazwa: 'Godziny szczytu', trudnosc: 4, ruch: 26, piesi: 20,
+  { nazwa: 'Godziny szczytu', trudnosc: 4, ruch: 38, piesi: 20,
     opis: 'Ulice są zatłoczone. Utrzymaj odstęp, nie blokuj skrzyżowań i zachowaj spokój.',
     start: { i: 2, j: 0, d: 1 }, cel: { i: 4, j: 6 },
     wskazowki: ['Nie wjeżdżaj na skrzyżowanie, jeśli nie masz pewności, że zdołasz je opuścić.',
       'Bezpieczny odstęp w mieście to około 2 sekundy do poprzedzającego pojazdu.',
       'W korku hamuj wcześnie i łagodnie — gwałtowne hamowanie wywołuje kolizje z tyłu.'] },
 
-  { nazwa: 'Jazda nocą', trudnosc: 4, ruch: 16, piesi: 14, noc: true,
+  { nazwa: 'Jazda nocą', trudnosc: 4, ruch: 26, piesi: 14, noc: true,
     opis: 'Nocą widzisz tylko tyle, ile oświetlą reflektory. Zmniejsz prędkość i uważaj na pieszych.',
     start: { i: 6, j: 4, d: 2 }, cel: { i: 1, j: 1 },
     wskazowki: ['Prędkość dobieraj tak, byś mógł zatrzymać się w zasięgu świateł.',
       'Pieszy w ciemnym ubraniu jest widoczny z kilkunastu metrów — poza terenem zabudowanym musi nosić odblaski.',
       'Nie patrz w reflektory nadjeżdżających aut; kieruj wzrok na prawą krawędź jezdni.'] },
 
-  { nazwa: 'Trasa egzaminacyjna', trudnosc: 4, ruch: 20, piesi: 16,
+  { nazwa: 'Trasa egzaminacyjna', trudnosc: 4, ruch: 32, piesi: 16,
     opis: 'Pełna trasa sprawdzająca wszystkie umiejętności: pierwszeństwo, światła, prędkość i piesi.',
     start: { i: 6, j: 6, d: 2 }, cel: { i: 0, j: 1 },
     wskazowki: ['Egzaminator ocenia płynność jazdy tak samo jak znajomość przepisów.',
       'Jazda zbyt wolna bez powodu też jest błędem — utrudniasz ruch.',
       'Obserwuj znaki w oddali, nie tuż przed maską.'] },
 
-  { nazwa: 'Precyzyjne parkowanie', trudnosc: 4, ruch: 14, piesi: 12, typ: 'parking', parking: 1,
+  { nazwa: 'Precyzyjne parkowanie', trudnosc: 4, ruch: 24, piesi: 12, typ: 'parking', parking: 1,
     opis: 'Przejedź przez centrum i zaparkuj w wyznaczonym miejscu przy ulicy Targowej.',
     start: { i: 2, j: 2, d: 0 },
     wskazowki: ['Do miejsca podjeżdżaj powoli, oceniając odległość do linii.',
       'Przy manewrowaniu używaj krótkich impulsów gazu i hamulca.',
       'Zaparkowany pojazd nie może wystawać poza linie ani blokować przejścia.'] },
 
-  { nazwa: 'Egzamin państwowy', trudnosc: 4, ruch: 24, piesi: 18, bezPodpowiedzi: true, prog: 80,
+  { nazwa: 'Egzamin państwowy', trudnosc: 4, ruch: 36, piesi: 18, bezPodpowiedzi: true, prog: 80,
     opis: 'Brak podpowiedzi, pełny ruch, wymagane 80 punktów. Egzaminator nie powie Ci, co masz zrobić — musisz wiedzieć sam.',
     start: { i: 0, j: 6, d: 0 }, cel: { i: 6, j: 0 },
     wskazowki: ['Instruktor milczy. Wszystkie decyzje podejmujesz na podstawie znaków i sytuacji.',
