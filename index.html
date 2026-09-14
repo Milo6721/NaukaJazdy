@@ -1,0 +1,2756 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Autoszkoła 3D — symulator nauki jazdy i znaków drogowych</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;500;600;700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+:root{
+  --asfalt:#0E1013;
+  --panel:#15181C;
+  --panel-2:#1C2026;
+  --linia:#2A3038;
+  --beton:#F3F5F7;
+  --beton-cichy:#9BA6B2;
+  --zolty:#F7C948;
+  --czerwony:#D8232A;
+  --zielony:#2FBF5C;
+  --niebieski:#2563C9;
+  --pomaranczowy:#E8862A;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%;overflow:hidden;background:var(--asfalt);color:var(--beton);
+  font-family:'Inter',system-ui,sans-serif;-webkit-font-smoothing:antialiased}
+canvas{display:block}
+button{font-family:inherit;cursor:pointer;border:none;background:none;color:inherit}
+:focus-visible{outline:2px solid var(--zolty);outline-offset:2px}
+
+/* ── scena ────────────────────────────────────── */
+#scena{position:fixed;inset:0}
+
+/* ── wspólne panele ───────────────────────────── */
+.panel{
+  background:rgba(21,24,28,.92);
+  border:1px solid var(--linia);
+  border-radius:10px;
+  backdrop-filter:blur(6px);
+}
+.naglowek{
+  font-family:'Barlow Condensed',sans-serif;
+  font-size:13px;letter-spacing:.08em;color:var(--beton-cichy);
+  padding:8px 12px;border-bottom:1px solid var(--linia);
+}
+
+/* ── HUD ──────────────────────────────────────── */
+#hud{position:fixed;inset:0;pointer-events:none;display:none}
+#hud.wid{display:block}
+#hud .panel{pointer-events:auto}
+
+/* misja — lewa kolumna */
+#misja{position:absolute;top:16px;left:16px;width:310px;max-height:calc(100vh - 240px);
+  display:flex;flex-direction:column}
+#misjaTytul{font-family:'Barlow Condensed',sans-serif;font-size:24px;line-height:1.1;padding:10px 12px 2px}
+#misjaNr{font-family:'Barlow Condensed',sans-serif;color:var(--zolty);font-size:13px;
+  letter-spacing:.1em;padding:8px 12px 0}
+#misjaOpis{font-size:13px;color:var(--beton-cichy);padding:6px 12px 10px;line-height:1.5}
+#misjaCel{display:flex;align-items:center;gap:8px;padding:9px 12px;border-top:1px solid var(--linia);
+  font-family:'Barlow Condensed',sans-serif;font-size:17px}
+#strzalkaCel{width:26px;height:26px;flex:none;color:var(--zielony)}
+#dystans{color:var(--zielony)}
+#wskazowki{list-style:none;padding:4px 12px 12px;overflow-y:auto;font-size:12.5px;line-height:1.5;
+  color:var(--beton-cichy)}
+#wskazowki li{padding:5px 0 5px 16px;position:relative}
+#wskazowki li::before{content:'';position:absolute;left:0;top:11px;width:7px;height:7px;
+  border-radius:2px;background:var(--zolty)}
+
+/* zegary */
+#zegary{position:absolute;bottom:18px;left:50%;transform:translateX(-50%);
+  display:flex;align-items:flex-end;gap:14px}
+#predkosciomierz{width:132px;height:132px;position:relative}
+#predkoscTxt{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;
+  justify-content:center;font-family:'Barlow Condensed',sans-serif}
+#predkoscVal{font-size:44px;line-height:.9}
+#predkoscJedn{font-size:12px;color:var(--beton-cichy);letter-spacing:.14em}
+.kafel{min-width:92px;padding:8px 12px 10px;text-align:center}
+.kafel .etykieta{font-size:11px;color:var(--beton-cichy);letter-spacing:.06em}
+.kafel .wart{font-family:'Barlow Condensed',sans-serif;font-size:30px;line-height:1.05}
+#punktyKafel .wart{color:var(--zielony)}
+#punktyKafel.ostrzezenie .wart{color:var(--zolty)}
+#punktyKafel.zle .wart{color:var(--czerwony)}
+#limitZnak{width:62px;height:62px;border-radius:50%;background:#fff;border:7px solid var(--czerwony);
+  display:flex;align-items:center;justify-content:center;color:#111;
+  font-family:'Barlow Condensed',sans-serif;font-weight:700;font-size:27px;margin:0 auto}
+#biegKafel .wart{font-size:30px}
+
+/* minimapa */
+#mapaPanel{position:absolute;top:16px;right:16px;width:246px}
+#mapa{width:100%;height:246px;display:block;border-radius:0 0 9px 9px;background:#0A0C0E}
+#mapaLegenda{display:flex;gap:12px;padding:7px 10px;font-size:11px;color:var(--beton-cichy);
+  border-top:1px solid var(--linia);flex-wrap:wrap}
+#mapaLegenda span{display:flex;align-items:center;gap:5px}
+.kropka{width:8px;height:8px;border-radius:50%;display:inline-block}
+
+/* znak w zasięgu wzroku */
+#znakPanel{position:absolute;top:16px;left:50%;transform:translateX(-50%);width:390px;
+  display:none;overflow:hidden}
+#znakPanel.wid{display:block}
+#znakWiersz{display:flex;gap:12px;padding:12px}
+#znakObraz{width:74px;height:74px;flex:none;border-radius:6px;background:#fff}
+#znakKod{font-family:'Barlow Condensed',sans-serif;font-size:12px;letter-spacing:.1em;color:var(--zolty)}
+#znakNazwa{font-family:'Barlow Condensed',sans-serif;font-size:20px;line-height:1.15;margin:1px 0 4px}
+#znakOpis{font-size:12.5px;line-height:1.45;color:var(--beton-cichy)}
+
+/* komunikaty sędziego */
+#komunikaty{position:absolute;top:120px;left:50%;transform:translateX(-50%);width:440px;
+  display:flex;flex-direction:column;gap:8px;align-items:center}
+.toast{width:100%;border-radius:9px;padding:11px 14px;border-left:5px solid;
+  background:rgba(21,24,28,.96);border-top:1px solid var(--linia);border-right:1px solid var(--linia);
+  border-bottom:1px solid var(--linia);animation:wjazd .22s ease-out}
+@keyframes wjazd{from{opacity:0;transform:translateY(-10px)}to{opacity:1;transform:none}}
+.toast .tyt{font-family:'Barlow Condensed',sans-serif;font-size:18px;display:flex;
+  justify-content:space-between;gap:10px}
+.toast .tresc{font-size:12.5px;color:var(--beton-cichy);line-height:1.45;margin-top:3px}
+.toast.blad{border-left-color:var(--czerwony)}
+.toast.blad .tyt{color:#FF6B6B}
+.toast.ok{border-left-color:var(--zielony)}
+.toast.ok .tyt{color:var(--zielony)}
+.toast.info{border-left-color:var(--niebieski)}
+.toast .kara{font-family:'Barlow Condensed',sans-serif;color:var(--czerwony)}
+
+/* pomoc sterowania */
+#sterowanie{position:absolute;bottom:18px;right:16px;padding:10px 12px;font-size:11.5px;
+  color:var(--beton-cichy);line-height:1.7}
+#sterowanie b{color:var(--beton);font-weight:600}
+kbd{display:inline-block;min-width:20px;text-align:center;padding:1px 5px;border-radius:4px;
+  background:var(--panel-2);border:1px solid var(--linia);font-family:'Barlow Condensed',sans-serif;
+  color:var(--beton)}
+
+/* światło przed nami */
+#swiatloPanel{position:absolute;bottom:170px;left:50%;transform:translateX(-50%);
+  display:none;gap:6px;padding:7px 9px;align-items:center}
+#swiatloPanel.wid{display:flex}
+.lampka{width:15px;height:15px;border-radius:50%;background:#23272D}
+.lampka.on-r{background:var(--czerwony);box-shadow:0 0 12px var(--czerwony)}
+.lampka.on-y{background:var(--zolty);box-shadow:0 0 12px var(--zolty)}
+.lampka.on-g{background:var(--zielony);box-shadow:0 0 12px var(--zielony)}
+
+/* ── ekrany pełne ─────────────────────────────── */
+.ekran{position:fixed;inset:0;background:rgba(8,10,12,.93);display:flex;align-items:center;
+  justify-content:center;padding:24px;z-index:20;overflow-y:auto}
+.ekran.ukryty{display:none}
+.okno{width:min(980px,100%);background:var(--panel);border:1px solid var(--linia);border-radius:14px;
+  overflow:hidden}
+.oknoNag{padding:22px 26px 18px;border-bottom:1px solid var(--linia);
+  background:linear-gradient(180deg,#191D22,#15181C)}
+.oknoNag h1{font-family:'Barlow Condensed',sans-serif;font-size:40px;font-weight:600;line-height:1}
+.oknoNag p{color:var(--beton-cichy);font-size:13.5px;margin-top:7px;max-width:62ch;line-height:1.55}
+.pasy{height:5px;background:repeating-linear-gradient(90deg,var(--zolty) 0 34px,#15181C 34px 62px)}
+.oknoTresc{padding:20px 26px 26px;max-height:min(64vh,640px);overflow-y:auto}
+.zakladki{display:flex;gap:4px;padding:0 26px;border-bottom:1px solid var(--linia)}
+.zakladka{padding:11px 15px;font-family:'Barlow Condensed',sans-serif;font-size:17px;
+  color:var(--beton-cichy);border-bottom:2px solid transparent}
+.zakladka.akt{color:var(--beton);border-bottom-color:var(--zolty)}
+.karta{display:none}
+.karta.akt{display:block}
+
+/* lista misji */
+#listaMisji{display:grid;grid-template-columns:repeat(auto-fill,minmax(276px,1fr));gap:11px}
+.misja{background:var(--panel-2);border:1px solid var(--linia);border-radius:9px;padding:13px 14px;
+  text-align:left;display:flex;flex-direction:column;gap:5px;transition:border-color .15s,transform .15s}
+.misja:hover{border-color:var(--zolty);transform:translateY(-2px)}
+.misja .gora{display:flex;justify-content:space-between;align-items:baseline;gap:8px}
+.misja .nr{font-family:'Barlow Condensed',sans-serif;font-size:12px;letter-spacing:.1em;color:var(--zolty)}
+.misja .tyt{font-family:'Barlow Condensed',sans-serif;font-size:19px;line-height:1.15}
+.misja .op{font-size:12px;color:var(--beton-cichy);line-height:1.45}
+.misja .stopka{display:flex;gap:6px;margin-top:3px;flex-wrap:wrap}
+.plakietka{font-size:10.5px;padding:2px 7px;border-radius:20px;border:1px solid var(--linia);
+  color:var(--beton-cichy)}
+.plakietka.trudnosc1{color:var(--zielony);border-color:rgba(47,191,92,.4)}
+.plakietka.trudnosc2{color:var(--zolty);border-color:rgba(247,201,72,.4)}
+.plakietka.trudnosc3{color:var(--pomaranczowy);border-color:rgba(232,134,42,.4)}
+.plakietka.trudnosc4{color:var(--czerwony);border-color:rgba(216,35,42,.45)}
+.misja .wynik{font-family:'Barlow Condensed',sans-serif;font-size:13px;color:var(--zielony)}
+
+/* katalog znaków */
+.grupaZnakow{margin-bottom:24px}
+.grupaZnakow h3{font-family:'Barlow Condensed',sans-serif;font-size:22px;margin-bottom:3px}
+.grupaZnakow p.wstep{font-size:12.5px;color:var(--beton-cichy);margin-bottom:12px;line-height:1.5;max-width:72ch}
+.siatkaZnakow{display:grid;grid-template-columns:repeat(auto-fill,minmax(216px,1fr));gap:10px}
+.znakKarta{display:flex;gap:11px;background:var(--panel-2);border:1px solid var(--linia);
+  border-radius:8px;padding:10px}
+.znakKarta canvas{width:56px;height:56px;flex:none;border-radius:5px;background:#fff}
+.znakKarta .kod{font-family:'Barlow Condensed',sans-serif;font-size:11px;letter-spacing:.09em;color:var(--zolty)}
+.znakKarta .nz{font-size:13px;font-weight:600;line-height:1.25;margin:1px 0 3px}
+.znakKarta .op{font-size:11.5px;color:var(--beton-cichy);line-height:1.4}
+
+/* przepisy */
+.przepis{border-left:3px solid var(--zolty);padding:2px 0 2px 14px;margin-bottom:16px}
+.przepis h4{font-family:'Barlow Condensed',sans-serif;font-size:19px;margin-bottom:4px}
+.przepis p{font-size:13px;color:var(--beton-cichy);line-height:1.6;max-width:78ch}
+
+/* przyciski */
+.przyciski{display:flex;gap:10px;flex-wrap:wrap;padding:16px 26px 22px;border-top:1px solid var(--linia)}
+.btn{padding:11px 20px;border-radius:8px;font-family:'Barlow Condensed',sans-serif;font-size:18px;
+  background:var(--panel-2);border:1px solid var(--linia);transition:background .15s,border-color .15s}
+.btn:hover{background:#242932;border-color:#3A424E}
+.btn.glowny{background:var(--zolty);color:#14161A;border-color:var(--zolty);font-weight:600}
+.btn.glowny:hover{background:#FFD75E}
+
+/* podsumowanie */
+#ocenaBlok{display:flex;gap:22px;align-items:center;flex-wrap:wrap;margin-bottom:20px}
+#ocenaKolo{width:118px;height:118px;border-radius:50%;display:flex;flex-direction:column;
+  align-items:center;justify-content:center;flex:none;border:5px solid var(--zielony)}
+#ocenaKolo.zle{border-color:var(--czerwony)}
+#ocenaWynik{font-family:'Barlow Condensed',sans-serif;font-size:46px;line-height:.9}
+#ocenaMax{font-size:11px;color:var(--beton-cichy)}
+#ocenaTekst h2{font-family:'Barlow Condensed',sans-serif;font-size:31px}
+#ocenaTekst p{color:var(--beton-cichy);font-size:13.5px;margin-top:5px;line-height:1.55;max-width:60ch}
+#statystyki{display:flex;gap:10px;margin-top:12px;flex-wrap:wrap}
+.stat{background:var(--panel-2);border:1px solid var(--linia);border-radius:8px;padding:7px 13px}
+.stat .w{font-family:'Barlow Condensed',sans-serif;font-size:21px}
+.stat .e{font-size:10.5px;color:var(--beton-cichy)}
+#listaBledow{list-style:none}
+#listaBledow li{background:var(--panel-2);border:1px solid var(--linia);border-left:4px solid var(--czerwony);
+  border-radius:7px;padding:10px 13px;margin-bottom:8px}
+#listaBledow .bTyt{font-family:'Barlow Condensed',sans-serif;font-size:17px;display:flex;
+  justify-content:space-between;gap:10px}
+#listaBledow .bOpis{font-size:12.5px;color:var(--beton-cichy);line-height:1.5;margin-top:3px}
+#listaBledow .bIle{color:var(--czerwony);font-family:'Barlow Condensed',sans-serif}
+#bezBledow{background:var(--panel-2);border:1px solid rgba(47,191,92,.4);border-left:4px solid var(--zielony);
+  border-radius:7px;padding:12px 14px;font-size:13px;color:var(--beton-cichy)}
+
+/* ładowanie */
+#ladowanie{position:fixed;inset:0;background:var(--asfalt);display:flex;align-items:center;
+  justify-content:center;flex-direction:column;gap:16px;z-index:40}
+#ladowanie h2{font-family:'Barlow Condensed',sans-serif;font-size:30px}
+#pasekLad{width:260px;height:5px;background:var(--panel-2);border-radius:3px;overflow:hidden}
+#pasekLadWyp{height:100%;width:15%;background:var(--zolty);transition:width .3s}
+#ladTekst{font-size:12.5px;color:var(--beton-cichy)}
+
+@media (max-width:900px){
+  #misja{width:242px}
+  #mapaPanel{width:184px}#mapa{height:184px}
+  #sterowanie{display:none}
+  #znakPanel{width:300px}
+}
+</style>
+</head>
+<body>
+
+<div id="scena"></div>
+
+<!-- ══ HUD ══ -->
+<div id="hud">
+  <section id="misja" class="panel">
+    <div id="misjaNr">Misja 1 z 18</div>
+    <h2 id="misjaTytul">Pierwsze metry</h2>
+    <p id="misjaOpis">Opis misji</p>
+    <div id="misjaCel">
+      <svg id="strzalkaCel" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2l7 18-7-4-7 4z"/></svg>
+      <span>Cel: <span id="dystans">120 m</span></span>
+    </div>
+    <ul id="wskazowki"></ul>
+  </section>
+
+  <section id="mapaPanel" class="panel">
+    <div class="naglowek">Mapa miasta i trasa</div>
+    <canvas id="mapa" width="492" height="492"></canvas>
+    <div id="mapaLegenda">
+      <span><i class="kropka" style="background:#F7C948"></i>Ty</span>
+      <span><i class="kropka" style="background:#2FBF5C"></i>Cel</span>
+      <span><i class="kropka" style="background:#5B6673"></i>Ruch</span>
+      <span><i class="kropka" style="background:#2563C9"></i>Piesi</span>
+    </div>
+  </section>
+
+  <section id="znakPanel" class="panel">
+    <div id="znakWiersz">
+      <canvas id="znakObraz" width="148" height="148"></canvas>
+      <div>
+        <div id="znakKod">B-33</div>
+        <div id="znakNazwa">Ograniczenie prędkości</div>
+        <div id="znakOpis">Opis znaku</div>
+      </div>
+    </div>
+  </section>
+
+  <div id="komunikaty"></div>
+
+  <div id="swiatloPanel" class="panel">
+    <i class="lampka" id="lampR"></i><i class="lampka" id="lampY"></i><i class="lampka" id="lampG"></i>
+  </div>
+
+  <div id="zegary">
+    <div class="kafel panel" id="punktyKafel">
+      <div class="wart" id="punktyVal">100</div>
+      <div class="etykieta">punkty</div>
+    </div>
+    <div class="panel" style="padding:6px">
+      <canvas id="predkosciomierz" width="264" height="264"></canvas>
+      <div id="predkoscTxt"><div id="predkoscVal">0</div><div id="predkoscJedn">km/h</div></div>
+    </div>
+    <div class="kafel panel">
+      <div id="limitZnak">50</div>
+      <div class="etykieta" style="margin-top:5px">limit</div>
+    </div>
+    <div class="kafel panel" id="biegKafel">
+      <div class="wart" id="biegVal">D</div>
+      <div class="etykieta">bieg</div>
+    </div>
+  </div>
+
+  <div id="sterowanie" class="panel">
+    <b>Sterowanie</b><br>
+    <kbd>↑</kbd> gaz &nbsp; <kbd>↓</kbd> hamulec / wsteczny<br>
+    <kbd>←</kbd> <kbd>→</kbd> kierownica<br>
+    <kbd>Esc</kbd> menu &nbsp; <kbd>R</kbd> powrót na drogę
+  </div>
+</div>
+
+<!-- ══ MENU ══ -->
+<div class="ekran" id="menu">
+  <div class="okno">
+    <div class="oknoNag">
+      <h1>Autoszkoła 3D</h1>
+      <p>Osiemnaście lekcji jazdy po mieście zbudowanym z prawdziwych polskich znaków drogowych.
+         Instruktor siedzi obok i ocenia każdy manewr: pierwszeństwo, prędkość, światła, pieszych.</p>
+    </div>
+    <div class="pasy"></div>
+    <div class="zakladki">
+      <button class="zakladka akt" data-karta="kMisje">Lekcje</button>
+      <button class="zakladka" data-karta="kZnaki">Katalog znaków</button>
+      <button class="zakladka" data-karta="kPrzepisy">Zasady na drodze</button>
+    </div>
+    <div class="oknoTresc">
+      <div class="karta akt" id="kMisje"><div id="listaMisji"></div></div>
+      <div class="karta" id="kZnaki"><div id="katalogZnakow"></div></div>
+      <div class="karta" id="kPrzepisy"><div id="przepisyTresc"></div></div>
+    </div>
+  </div>
+</div>
+
+<!-- ══ PODSUMOWANIE ══ -->
+<div class="ekran ukryty" id="podsumowanie">
+  <div class="okno">
+    <div class="oknoNag">
+      <h1 id="podsTytul">Lekcja zaliczona</h1>
+      <p id="podsPodtytul">Podsumowanie przejazdu</p>
+    </div>
+    <div class="pasy"></div>
+    <div class="oknoTresc">
+      <div id="ocenaBlok">
+        <div id="ocenaKolo">
+          <div id="ocenaWynik">100</div>
+          <div id="ocenaMax">na 100 pkt</div>
+        </div>
+        <div id="ocenaTekst">
+          <h2 id="ocenaNaglowek">Jazda bez zarzutu</h2>
+          <p id="ocenaKomentarz">Komentarz instruktora</p>
+          <div id="statystyki"></div>
+        </div>
+      </div>
+      <h3 style="font-family:'Barlow Condensed',sans-serif;font-size:21px;margin-bottom:10px">Co poszło nie tak</h3>
+      <ul id="listaBledow"></ul>
+      <div id="bezBledow" style="display:none">Instruktor nie zanotował ani jednego błędu. Tak wygląda przejazd na piątkę.</div>
+    </div>
+    <div class="przyciski">
+      <button class="btn glowny" id="btnDalej">Następna lekcja</button>
+      <button class="btn" id="btnPowtorz">Powtórz tę lekcję</button>
+      <button class="btn" id="btnMenu">Wróć do menu</button>
+    </div>
+  </div>
+</div>
+
+<!-- ══ ŁADOWANIE ══ -->
+<div id="ladowanie">
+  <h2>Budowanie miasta</h2>
+  <div id="pasekLad"><div id="pasekLadWyp"></div></div>
+  <div id="ladTekst">wytyczanie ulic…</div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script>
+/* ============================================================
+   AUTOSZKOŁA 3D — symulator nauki jazdy
+   Część 1: konfiguracja świata + katalog znaków drogowych
+   ============================================================ */
+'use strict';
+
+/* ---------- siatka miasta ---------- */
+const SP = 90;            // odległość między ulicami (m)
+const NG = 7;             // liczba ulic w każdą stronę
+const POL_HALF = 7;       // połowa szerokości jezdni
+const PAS = 3.5;          // środek pasa ruchu
+const CHOD = 3.2;         // szerokość chodnika
+const P = i => (i - (NG - 1) / 2) * SP;
+const KRANIEC = P(NG - 1) + SP * 0.5;
+
+const NAZWY_PION = ['Sosnowa', 'Kwiatowa', 'Zamkowa', 'Główna', 'Portowa', 'Jaśminowa', 'Wschodnia'];
+const NAZWY_POZ  = ['Północna', 'Akacjowa', 'Piastowska', 'Wolności', 'Targowa', 'Słoneczna', 'Brzozowa'];
+
+/* ulice z pierwszeństwem (droga z pierwszeństwem D-1) */
+const PRIORYTET_POZ = [3];       // Wolności
+const PRIORYTET_PION = [3];      // Główna
+/* ograniczenia prędkości */
+const LIMIT_POZ  = [50, 50, 30, 50, 50, 70, 50];
+const LIMIT_PION = [50, 30, 50, 50, 50, 50, 70];
+/* ulica jednokierunkowa: pionowa nr 5, ruch tylko w stronę -z (na północ) */
+const JEDNOKIER_PION = 5;
+const JEDNOKIER_DIR = 3;         // 3 = -z
+
+/* ---------- drobne narzędzia ---------- */
+const kl = (v, a, b) => Math.max(a, Math.min(b, v));
+const lerp = (a, b, t) => a + (b - a) * t;
+const losuj = (a, b) => a + Math.random() * (b - a);
+const losEl = t => t[Math.floor(Math.random() * t.length)];
+const kat = a => { while (a > Math.PI) a -= Math.PI * 2; while (a < -Math.PI) a += Math.PI * 2; return a; };
+const DIRV = [[1, 0], [0, 1], [-1, 0], [0, -1]];   // +x, +z, -x, -z
+const dirKat = d => [0, Math.PI / 2, Math.PI, -Math.PI / 2][d];
+
+/* ============================================================
+   KATALOG ZNAKÓW — rysowanie wektorowe na canvasie 256×256
+   ============================================================ */
+const R_CZER = '#D52B1E', R_ZOLT = '#FFCC00', R_NIEB = '#0057A6',
+      R_ZIEL = '#009A44', R_CZAR = '#111111', R_BIAL = '#FFFFFF';
+
+function nowyCanvas(s) {
+  const c = document.createElement('canvas'); c.width = c.height = s; return c;
+}
+
+/* --- kształty tła --- */
+function tloTrojkat(x, tlo) {                 // znak ostrzegawczy A
+  const g = x; g.save();
+  g.clearRect(0, 0, 256, 256);
+  const path = (cx, cy, r) => {
+    g.beginPath();
+    for (let i = 0; i < 3; i++) {
+      const a = -Math.PI / 2 + i * Math.PI * 2 / 3;
+      const px = cx + Math.cos(a) * r, py = cy + Math.sin(a) * r * 1.0;
+      i ? g.lineTo(px, py) : g.moveTo(px, py);
+    }
+    g.closePath();
+  };
+  g.fillStyle = R_CZER; path(128, 142, 126); g.fill();
+  g.fillStyle = tlo || R_ZOLT; path(128, 146, 100); g.fill();
+  g.restore();
+}
+function tloTrojkatOdw(g) {                   // A-7 ustąp pierwszeństwa
+  g.clearRect(0, 0, 256, 256);
+  const path = (cy, r) => {
+    g.beginPath();
+    for (let i = 0; i < 3; i++) {
+      const a = Math.PI / 2 + i * Math.PI * 2 / 3;
+      const px = 128 + Math.cos(a) * r, py = cy + Math.sin(a) * r;
+      i ? g.lineTo(px, py) : g.moveTo(px, py);
+    }
+    g.closePath();
+  };
+  g.fillStyle = R_CZER; path(114, 126); g.fill();
+  g.fillStyle = R_BIAL; path(110, 96); g.fill();
+}
+function tloKolo(g, obwodka, wypelnienie, gr) {
+  g.clearRect(0, 0, 256, 256);
+  g.fillStyle = obwodka; g.beginPath(); g.arc(128, 128, 124, 0, 7); g.fill();
+  g.fillStyle = wypelnienie; g.beginPath(); g.arc(128, 128, 124 - (gr || 30), 0, 7); g.fill();
+}
+function tloProstokat(g, kolor, r) {
+  g.clearRect(0, 0, 256, 256);
+  const rr = r === undefined ? 14 : r;
+  g.fillStyle = R_BIAL;
+  g.beginPath(); g.roundRect ? g.roundRect(6, 26, 244, 204, rr) : g.rect(6, 26, 244, 204); g.fill();
+  g.fillStyle = kolor;
+  g.beginPath(); g.roundRect ? g.roundRect(13, 33, 230, 190, rr - 4) : g.rect(13, 33, 230, 190); g.fill();
+}
+function tloKwadrat(g, kolor) {
+  g.clearRect(0, 0, 256, 256);
+  g.fillStyle = R_BIAL; g.fillRect(8, 8, 240, 240);
+  g.fillStyle = kolor; g.fillRect(16, 16, 224, 224);
+}
+
+/* --- pomocnicze piktogramy --- */
+function strzalka(g, x, y, dl, kier, szer, kolor) {
+  // kier w radianach: 0 = w górę
+  g.save(); g.translate(x, y); g.rotate(kier);
+  g.fillStyle = kolor || R_BIAL;
+  const w = szer || 20;
+  g.beginPath();
+  g.moveTo(-w, dl * 0.35);
+  g.lineTo(-w, -dl * 0.05);
+  g.lineTo(-w * 2.1, -dl * 0.05);
+  g.lineTo(0, -dl * 0.55);
+  g.lineTo(w * 2.1, -dl * 0.05);
+  g.lineTo(w, -dl * 0.05);
+  g.lineTo(w, dl * 0.35);
+  g.closePath(); g.fill(); g.restore();
+}
+function ludzik(g, x, y, s, kolor) {
+  g.save(); g.translate(x, y); g.scale(s, s); g.fillStyle = kolor || R_CZAR;
+  g.beginPath(); g.arc(0, -34, 9, 0, 7); g.fill();                 // głowa
+  g.beginPath(); g.moveTo(-8, -24); g.lineTo(8, -24); g.lineTo(12, 4); g.lineTo(-4, 4); g.closePath(); g.fill();
+  g.lineWidth = 6; g.strokeStyle = kolor || R_CZAR; g.lineCap = 'round';
+  g.beginPath(); g.moveTo(-6, 2); g.lineTo(-14, 30); g.stroke();   // nogi
+  g.beginPath(); g.moveTo(8, 2); g.lineTo(14, 30); g.stroke();
+  g.beginPath(); g.moveTo(6, -20); g.lineTo(18, -6); g.stroke();   // ręka
+  g.restore();
+}
+function autko(g, x, y, s, kolor) {
+  g.save(); g.translate(x, y); g.scale(s, s); g.fillStyle = kolor || R_CZAR;
+  g.beginPath();
+  g.moveTo(-34, 8); g.lineTo(-28, -8); g.lineTo(-14, -10); g.lineTo(-8, -24);
+  g.lineTo(14, -24); g.lineTo(22, -10); g.lineTo(34, -6); g.lineTo(34, 8);
+  g.closePath(); g.fill();
+  g.beginPath(); g.arc(-20, 10, 8, 0, 7); g.fill();
+  g.beginPath(); g.arc(20, 10, 8, 0, 7); g.fill();
+  g.restore();
+}
+function rower(g, x, y, s, kolor) {
+  g.save(); g.translate(x, y); g.scale(s, s);
+  g.strokeStyle = kolor || R_CZAR; g.lineWidth = 5;
+  g.beginPath(); g.arc(-22, 12, 15, 0, 7); g.stroke();
+  g.beginPath(); g.arc(22, 12, 15, 0, 7); g.stroke();
+  g.beginPath(); g.moveTo(-22, 12); g.lineTo(-4, -12); g.lineTo(16, -12); g.lineTo(22, 12);
+  g.moveTo(-4, -12); g.lineTo(4, 12); g.lineTo(22, 12); g.stroke();
+  g.beginPath(); g.moveTo(10, -18); g.lineTo(22, -18); g.stroke();
+  g.restore();
+}
+function ukosnik(g, kolor, szer) {
+  g.save(); g.translate(128, 128); g.rotate(Math.PI / 4);
+  g.fillStyle = kolor || R_CZER; g.fillRect(-(szer || 22) / 2, -118, szer || 22, 236);
+  g.restore();
+}
+function tekst(g, t, x, y, rozm, kolor, waga) {
+  g.save(); g.fillStyle = kolor || R_CZAR;
+  g.font = (waga || '700') + ' ' + rozm + "px 'Barlow Condensed', Arial Narrow, sans-serif";
+  g.textAlign = 'center'; g.textBaseline = 'middle';
+  g.fillText(t, x, y); g.restore();
+}
+
+/* ============================================================
+   DEFINICJE ZNAKÓW
+   kategoria: A ostrzegawcze | B zakazu | C nakazu | D informacyjne
+              | P pierwszeństwa | T tabliczki
+   ============================================================ */
+const ZNAKI = {};
+function Z(id, kod, nazwa, kat, opis, rys, dod) {
+  ZNAKI[id] = Object.assign({ id, kod, nazwa, kat, opis, rys }, dod || {});
+}
+
+/* ---------- A — ostrzegawcze ---------- */
+Z('A1', 'A-1', 'Niebezpieczny zakręt w prawo', 'A',
+  'Ostrzega przed łukiem drogi w prawo. Zdejmij nogę z gazu jeszcze przed zakrętem — hamuje się na prostej, a nie w łuku.',
+  g => { tloTrojkat(g); g.strokeStyle = R_CZAR; g.lineWidth = 17; g.lineCap = 'butt';
+    g.beginPath(); g.moveTo(108, 196); g.lineTo(108, 140); g.quadraticCurveTo(108, 96, 152, 96); g.lineTo(152, 74); g.stroke(); });
+
+Z('A2', 'A-2', 'Niebezpieczny zakręt w lewo', 'A',
+  'Łuk drogi w lewo. Nie ścinaj zakrętu — z naprzeciwka może nadjeżdżać pojazd.',
+  g => { tloTrojkat(g); g.strokeStyle = R_CZAR; g.lineWidth = 17;
+    g.beginPath(); g.moveTo(148, 196); g.lineTo(148, 140); g.quadraticCurveTo(148, 96, 104, 96); g.lineTo(104, 74); g.stroke(); });
+
+Z('A4', 'A-4', 'Niebezpieczne zakręty — pierwszy w lewo', 'A',
+  'Seria co najmniej dwóch zakrętów. Prędkość dobierz do całego odcinka, nie tylko do pierwszego łuku.',
+  g => { tloTrojkat(g); g.strokeStyle = R_CZAR; g.lineWidth = 15;
+    g.beginPath(); g.moveTo(128, 200); g.quadraticCurveTo(80, 168, 128, 138); g.quadraticCurveTo(176, 108, 128, 74); g.stroke(); });
+
+Z('A6a', 'A-6a', 'Skrzyżowanie z drogą podporządkowaną', 'A',
+  'Jedziesz drogą z pierwszeństwem. Pojazdy z drogi poprzecznej mają obowiązek Cię przepuścić, ale zachowaj ograniczone zaufanie.',
+  g => { tloTrojkat(g); g.fillStyle = R_CZAR; g.fillRect(120, 66, 16, 140); g.fillRect(72, 122, 112, 15); });
+
+Z('A6c', 'A-6c', 'Skrzyżowanie z drogą podporządkowaną z prawej', 'A',
+  'Droga podporządkowana dochodzi z prawej strony. Masz pierwszeństwo, ale obserwuj wlot.',
+  g => { tloTrojkat(g); g.fillStyle = R_CZAR; g.fillRect(120, 66, 16, 140); g.fillRect(128, 122, 58, 15); });
+
+Z('A7', 'A-7', 'Ustąp pierwszeństwa', 'P',
+  'Musisz ustąpić pierwszeństwa pojazdom na drodze poprzecznej. Zwolnij tak, by móc się zatrzymać; zatrzymanie jest obowiązkowe tylko wtedy, gdy ktoś nadjeżdża.',
+  g => { tloTrojkatOdw(g); });
+
+Z('A8', 'A-8', 'Skrzyżowanie o ruchu okrężnym', 'A',
+  'Przed rondem. Na rondzie pierwszeństwo ma zwykle pojazd znajdujący się już na jezdni ronda — o ile stoi tam znak A-7 lub B-20.',
+  g => { tloTrojkat(g); g.strokeStyle = R_CZAR; g.lineWidth = 15;
+    for (let i = 0; i < 3; i++) { g.save(); g.translate(128, 144); g.rotate(i * Math.PI * 2 / 3);
+      g.beginPath(); g.arc(0, 0, 42, -1.0, 0.9); g.stroke();
+      g.beginPath(); g.moveTo(Math.cos(0.9) * 42, Math.sin(0.9) * 42); g.lineTo(Math.cos(0.9) * 42 + 16, Math.sin(0.9) * 42 + 4); g.stroke(); g.restore(); } });
+
+Z('A11', 'A-11', 'Nierówna droga', 'A',
+  'Garby, koleiny lub ubytki nawierzchni. Zmniejsz prędkość — na nierównościach auto traci przyczepność.',
+  g => { tloTrojkat(g); g.fillStyle = R_CZAR; g.beginPath();
+    g.moveTo(66, 178); g.quadraticCurveTo(98, 112, 128, 168); g.quadraticCurveTo(158, 112, 190, 178); g.lineTo(190, 192); g.lineTo(66, 192); g.closePath(); g.fill(); });
+
+Z('A11a', 'A-11a', 'Próg zwalniający', 'A',
+  'Sztuczne wyniesienie jezdni. Przejeżdżaj powoli i prostopadle, inaczej uszkodzisz zawieszenie.',
+  g => { tloTrojkat(g); g.fillStyle = R_CZAR; g.beginPath();
+    g.moveTo(62, 184); g.quadraticCurveTo(128, 104, 194, 184); g.closePath(); g.fill(); });
+
+Z('A12a', 'A-12a', 'Zwężenie jezdni — dwustronne', 'A',
+  'Jezdnia zwęża się z obu stron. Ustąp, jeśli nie zmieścicie się obok siebie.',
+  g => { tloTrojkat(g); g.fillStyle = R_CZAR;
+    g.beginPath(); g.moveTo(74, 196); g.lineTo(100, 118); g.lineTo(112, 118); g.lineTo(92, 196); g.closePath(); g.fill();
+    g.beginPath(); g.moveTo(182, 196); g.lineTo(156, 118); g.lineTo(144, 118); g.lineTo(164, 196); g.closePath(); g.fill(); });
+
+Z('A14', 'A-14', 'Roboty na drodze', 'A',
+  'Prace drogowe. Spodziewaj się ludzi na jezdni, maszyn i zmienionej organizacji ruchu.',
+  g => { tloTrojkat(g);
+    ludzik(g, 122, 158, 1.15);
+    g.save(); g.strokeStyle = R_CZAR; g.lineWidth = 8; g.lineCap = 'round';
+    g.beginPath(); g.moveTo(140, 132); g.lineTo(170, 178); g.stroke();
+    g.fillStyle = R_CZAR; g.beginPath(); g.moveTo(132, 120); g.lineTo(156, 106); g.lineTo(166, 126); g.lineTo(142, 138); g.closePath(); g.fill();
+    g.fillRect(90, 186, 84, 10); g.restore(); });
+
+Z('A15', 'A-15', 'Śliska jezdnia', 'A',
+  'Nawierzchnia może być śliska (deszcz, błoto, liście). Hamuj łagodnie i nie wykonuj gwałtownych ruchów kierownicą.',
+  g => { tloTrojkat(g); autko(g, 128, 140, 1.15);
+    g.strokeStyle = R_CZAR; g.lineWidth = 7; g.lineCap = 'round';
+    g.beginPath(); g.moveTo(74, 178); g.quadraticCurveTo(96, 194, 74, 200); g.stroke();
+    g.beginPath(); g.moveTo(182, 178); g.quadraticCurveTo(160, 194, 182, 200); g.stroke(); });
+
+Z('A16', 'A-16', 'Przejście dla pieszych', 'A',
+  'Uprzedza o przejściu. Zbliżając się, zwolnij i obserwuj chodnik — pieszy wchodzący na przejście ma pierwszeństwo.',
+  g => { tloTrojkat(g); ludzik(g, 134, 148, 1.35);
+    g.fillStyle = R_CZAR; for (let i = 0; i < 4; i++) g.fillRect(70 + i * 22, 188, 12, 14); });
+
+Z('A17', 'A-17', 'Dzieci', 'A',
+  'Miejsce częstego przechodzenia dzieci, zwykle przy szkole. Dzieci są nieprzewidywalne — jedź wolno i bądź gotów zatrzymać się natychmiast.',
+  g => { tloTrojkat(g); ludzik(g, 104, 156, 1.0); ludzik(g, 152, 150, 0.78); });
+
+Z('A18b', 'A-18b', 'Zwierzęta dzikie', 'A',
+  'Możliwość wtargnięcia zwierzyny. Jeśli zobaczysz jedno zwierzę, spodziewaj się kolejnych.',
+  g => { tloTrojkat(g); g.fillStyle = R_CZAR;
+    g.beginPath(); g.moveTo(84, 190); g.lineTo(96, 148); g.lineTo(148, 140); g.lineTo(170, 152); g.lineTo(176, 120);
+    g.lineTo(186, 120); g.lineTo(184, 156); g.lineTo(168, 172); g.lineTo(170, 192); g.lineTo(158, 192);
+    g.lineTo(154, 168); g.lineTo(112, 172); g.lineTo(100, 192); g.closePath(); g.fill();
+    g.beginPath(); g.moveTo(176, 122); g.lineTo(164, 96); g.lineTo(172, 94); g.lineTo(184, 118); g.closePath(); g.fill(); });
+
+Z('A21', 'A-21', 'Tramwaj', 'A',
+  'Przejazd przez torowisko tramwajowe. Tramwaj ma dłuższą drogę hamowania i często pierwszeństwo — nigdy nie zatrzymuj się na torach.',
+  g => { tloTrojkat(g); g.fillStyle = R_CZAR;
+    g.fillRect(100, 106, 58, 74); g.fillRect(112, 180, 34, 12);
+    g.fillStyle = R_ZOLT; g.fillRect(108, 116, 42, 26);
+    g.fillStyle = R_CZAR; g.beginPath(); g.moveTo(126, 106); g.lineTo(132, 78); g.lineTo(136, 78); g.lineTo(130, 106); g.closePath(); g.fill();
+    g.fillRect(76, 192, 106, 8); });
+
+Z('A24', 'A-24', 'Rowerzyści', 'A',
+  'Ostrzega o wjeździe rowerzystów na jezdnię lub o przejeździe dla rowerów. Wyprzedzając rower, zachowaj minimum 1 metr odstępu.',
+  g => { tloTrojkat(g); rower(g, 128, 146, 1.25); });
+
+Z('A29', 'A-29', 'Sygnały świetlne', 'A',
+  'Za znakiem znajduje się sygnalizacja. Bądź gotów na zmianę światła — na żółtym zatrzymaj się, jeśli możesz to zrobić bezpiecznie.',
+  g => { tloTrojkat(g); g.fillStyle = R_CZAR; g.fillRect(104, 92, 48, 108);
+    g.fillStyle = R_CZER; g.beginPath(); g.arc(128, 114, 13, 0, 7); g.fill();
+    g.fillStyle = R_ZOLT; g.beginPath(); g.arc(128, 146, 13, 0, 7); g.fill();
+    g.fillStyle = R_ZIEL; g.beginPath(); g.arc(128, 178, 13, 0, 7); g.fill(); });
+
+Z('A30', 'A-30', 'Inne niebezpieczeństwo', 'A',
+  'Zagrożenie nieokreślone innym znakiem. Zwykle uzupełnia go tabliczka z wyjaśnieniem.',
+  g => { tloTrojkat(g); tekst(g, '!', 128, 152, 120, R_CZAR); });
+
+Z('A32', 'A-32', 'Oszronienie jezdni', 'A',
+  'Możliwa gołoledź, zwłaszcza na mostach i w cieniu. Hamuj wcześniej i delikatniej niż zwykle.',
+  g => { tloTrojkat(g); g.strokeStyle = R_CZAR; g.lineWidth = 8; g.lineCap = 'round';
+    for (let i = 0; i < 3; i++) { g.save(); g.translate(128, 152); g.rotate(i * Math.PI / 3);
+      g.beginPath(); g.moveTo(0, -38); g.lineTo(0, 38); g.stroke();
+      g.beginPath(); g.moveTo(0, -38); g.lineTo(-11, -26); g.moveTo(0, -38); g.lineTo(11, -26); g.stroke(); g.restore(); } });
+
+/* ---------- B — zakazu ---------- */
+Z('B1', 'B-1', 'Zakaz ruchu w obu kierunkach', 'B',
+  'Zakaz ruchu wszelkich pojazdów. Dotyczy również wjazdu na krótko — trzeba zawrócić przed znakiem.',
+  g => { tloKolo(g, R_CZER, R_CZER, 0); g.fillStyle = R_BIAL; g.fillRect(38, 112, 180, 32); });
+
+Z('B2', 'B-2', 'Zakaz wjazdu', 'B',
+  'Popularny „zakaz wjazdu”. Najczęściej oznacza wylot ulicy jednokierunkowej — wjazd tu to jazda pod prąd i bardzo groźne wykroczenie.',
+  g => { tloKolo(g, R_CZER, R_CZER, 0); g.fillStyle = R_BIAL; g.fillRect(46, 110, 164, 36); });
+
+Z('B5', 'B-5', 'Zakaz wjazdu samochodów ciężarowych', 'B',
+  'Dotyczy pojazdów o dopuszczalnej masie powyżej 3,5 t (lub podanej na tabliczce).',
+  g => { tloKolo(g, R_CZER, R_BIAL, 30); g.save(); g.translate(0, 6); autko(g, 128, 128, 1.5, R_CZAR);
+    g.fillStyle = R_CZAR; g.fillRect(64, 92, 62, 44); g.restore(); });
+
+Z('B9', 'B-9', 'Zakaz wjazdu rowerów', 'B',
+  'Rowery nie mogą korzystać z tej drogi. Kierowcę informuje, że rowerzysty tu nie spotka.',
+  g => { tloKolo(g, R_CZER, R_BIAL, 30); rower(g, 128, 128, 1.5); });
+
+Z('B20', 'B-20', 'STOP', 'P',
+  'Bezwzględny obowiązek zatrzymania się przed linią (a gdy jej nie ma — przed skrzyżowaniem). Zatrzymaj się CAŁKOWICIE, nawet gdy nikt nie jedzie, dopiero potem ruszaj.',
+  g => { g.clearRect(0, 0, 256, 256);
+    const okt = (r, kolor) => { g.beginPath();
+      for (let i = 0; i < 8; i++) { const a = Math.PI / 8 + i * Math.PI / 4;
+        const x = 128 + Math.cos(a) * r, y = 128 + Math.sin(a) * r; i ? g.lineTo(x, y) : g.moveTo(x, y); }
+      g.closePath(); g.fillStyle = kolor; g.fill(); };
+    okt(128, R_BIAL); okt(120, R_CZER);
+    tekst(g, 'STOP', 128, 132, 82, R_BIAL); });
+
+Z('B21', 'B-21', 'Zakaz skręcania w lewo', 'B',
+  'Zabrania skrętu w lewo na najbliższym skrzyżowaniu, a także zawracania.',
+  g => { tloKolo(g, R_CZER, R_BIAL, 30);
+    g.save(); g.strokeStyle = R_CZAR; g.lineWidth = 18; g.lineCap = 'butt';
+    g.beginPath(); g.moveTo(146, 198); g.lineTo(146, 130); g.lineTo(96, 130); g.stroke();
+    g.fillStyle = R_CZAR; g.beginPath(); g.moveTo(62, 130); g.lineTo(102, 104); g.lineTo(102, 156); g.closePath(); g.fill(); g.restore();
+    ukosnik(g, R_CZER, 24); });
+
+Z('B22', 'B-22', 'Zakaz skręcania w prawo', 'B',
+  'Zabrania skrętu w prawo na najbliższym skrzyżowaniu.',
+  g => { tloKolo(g, R_CZER, R_BIAL, 30);
+    g.save(); g.strokeStyle = R_CZAR; g.lineWidth = 18;
+    g.beginPath(); g.moveTo(110, 198); g.lineTo(110, 130); g.lineTo(160, 130); g.stroke();
+    g.fillStyle = R_CZAR; g.beginPath(); g.moveTo(194, 130); g.lineTo(154, 104); g.lineTo(154, 156); g.closePath(); g.fill(); g.restore();
+    ukosnik(g, R_CZER, 24); });
+
+Z('B23', 'B-23', 'Zakaz zawracania', 'B',
+  'Obowiązuje do najbliższego skrzyżowania. Zawracanie jest też zakazane m.in. na moście i w tunelu.',
+  g => { tloKolo(g, R_CZER, R_BIAL, 30);
+    g.save(); g.strokeStyle = R_CZAR; g.lineWidth = 16; g.lineCap = 'butt';
+    g.beginPath(); g.moveTo(160, 196); g.lineTo(160, 140); g.arc(128, 140, 32, 0, Math.PI, true); g.lineTo(96, 170); g.stroke();
+    g.fillStyle = R_CZAR; g.beginPath(); g.moveTo(96, 200); g.lineTo(74, 162); g.lineTo(118, 162); g.closePath(); g.fill(); g.restore();
+    ukosnik(g, R_CZER, 24); });
+
+Z('B25', 'B-25', 'Zakaz wyprzedzania', 'B',
+  'Zakaz wyprzedzania pojazdów silnikowych wielośladowych. Obowiązuje do najbliższego skrzyżowania lub znaku B-27.',
+  g => { tloKolo(g, R_CZER, R_BIAL, 30);
+    autko(g, 96, 140, 1.05, '#4A4A4A'); autko(g, 166, 140, 1.05, R_CZER); });
+
+Z('B26', 'B-26', 'Zakaz wyprzedzania przez samochody ciężarowe', 'B',
+  'Dotyczy pojazdów ciężarowych powyżej 3,5 t.',
+  g => { tloKolo(g, R_CZER, R_BIAL, 30);
+    autko(g, 96, 142, 1.0, '#4A4A4A'); autko(g, 168, 142, 1.0, R_CZER);
+    g.fillStyle = R_CZER; g.fillRect(140, 110, 52, 34); });
+
+Z('B33', 'B-33', 'Ograniczenie prędkości', 'B',
+  'Zakaz przekraczania podanej prędkości. Obowiązuje do skrzyżowania, znaku B-34 lub innego B-33.',
+  g => { tloKolo(g, R_CZER, R_BIAL, 30); tekst(g, '50', 128, 134, 126, R_CZAR); },
+  { param: 'limit' });
+
+Z('B34', 'B-34', 'Koniec ograniczenia prędkości', 'B',
+  'Odwołuje wcześniejszy znak B-33. Dalej obowiązuje limit ogólny: 50 km/h w obszarze zabudowanym.',
+  g => { tloKolo(g, '#8A8A8A', R_BIAL, 26); tekst(g, '50', 128, 134, 126, '#8A8A8A');
+    g.save(); g.strokeStyle = '#4A4A4A'; g.lineWidth = 9;
+    for (let i = -1; i <= 1; i++) { g.beginPath(); g.moveTo(50 + i * 12, 206); g.lineTo(206 + i * 12, 50); g.stroke(); } g.restore(); });
+
+Z('B35', 'B-35', 'Zakaz postoju', 'B',
+  'Wolno zatrzymać się na czas krótszy niż minuta (np. wysadzić pasażera), ale nie parkować.',
+  g => { tloKolo(g, R_CZER, R_NIEB, 30);
+    g.save(); g.translate(128, 128); g.rotate(-Math.PI / 4);
+    g.strokeStyle = R_CZER; g.lineWidth = 24; g.beginPath(); g.moveTo(-90, 0); g.lineTo(90, 0); g.stroke(); g.restore(); });
+
+Z('B36', 'B-36', 'Zakaz zatrzymywania się', 'B',
+  'Nie wolno zatrzymać pojazdu nawet na chwilę — poza sytuacjami wymuszonymi ruchem (np. korek, czerwone światło).',
+  g => { tloKolo(g, R_CZER, R_NIEB, 30);
+    g.save(); g.translate(128, 128); g.strokeStyle = R_CZER; g.lineWidth = 24;
+    g.rotate(-Math.PI / 4); g.beginPath(); g.moveTo(-90, 0); g.lineTo(90, 0); g.stroke();
+    g.rotate(Math.PI / 2); g.beginPath(); g.moveTo(-90, 0); g.lineTo(90, 0); g.stroke(); g.restore(); });
+
+Z('B41', 'B-41', 'Zakaz ruchu pieszych', 'B',
+  'Pieszy nie może wejść na tę drogę — kierowca nie powinien się go tu spodziewać.',
+  g => { tloKolo(g, R_CZER, R_BIAL, 30); ludzik(g, 128, 150, 1.5); ukosnik(g, R_CZER, 24); });
+
+Z('B43', 'B-43', 'Strefa ograniczonej prędkości', 'B',
+  'Limit obowiązuje w całej strefie, aż do znaku B-44 — także po skrzyżowaniach.',
+  g => { tloProstokat(g, R_BIAL, 8);
+    g.fillStyle = R_CZER; g.beginPath(); g.arc(128, 132, 62, 0, 7); g.fill();
+    g.fillStyle = R_BIAL; g.beginPath(); g.arc(128, 132, 46, 0, 7); g.fill();
+    tekst(g, '30', 128, 134, 56, R_CZAR); tekst(g, 'STREFA', 128, 56, 30, R_CZAR); });
+
+/* ---------- C — nakazu ---------- */
+Z('C2', 'C-2', 'Nakaz jazdy w prawo za znakiem', 'C',
+  'Za znakiem musisz skręcić w prawo. Jazda na wprost jest wykroczeniem.',
+  g => { tloKolo(g, R_NIEB, R_NIEB, 0);
+    g.save(); g.strokeStyle = R_BIAL; g.lineWidth = 22; g.lineCap = 'butt';
+    g.beginPath(); g.moveTo(104, 196); g.lineTo(104, 132); g.lineTo(150, 132); g.stroke();
+    g.fillStyle = R_BIAL; g.beginPath(); g.moveTo(196, 132); g.lineTo(146, 100); g.lineTo(146, 164); g.closePath(); g.fill(); g.restore(); });
+
+Z('C4', 'C-4', 'Nakaz jazdy w lewo za znakiem', 'C',
+  'Za znakiem obowiązkowy skręt w lewo.',
+  g => { tloKolo(g, R_NIEB, R_NIEB, 0);
+    g.save(); g.strokeStyle = R_BIAL; g.lineWidth = 22;
+    g.beginPath(); g.moveTo(152, 196); g.lineTo(152, 132); g.lineTo(106, 132); g.stroke();
+    g.fillStyle = R_BIAL; g.beginPath(); g.moveTo(60, 132); g.lineTo(110, 100); g.lineTo(110, 164); g.closePath(); g.fill(); g.restore(); });
+
+Z('C5', 'C-5', 'Nakaz jazdy prosto', 'C',
+  'Obowiązkowy kierunek jazdy na wprost — skręcanie na najbliższym skrzyżowaniu jest zabronione.',
+  g => { tloKolo(g, R_NIEB, R_NIEB, 0); strzalka(g, 128, 150, 150, 0, 22, R_BIAL); });
+
+Z('C6', 'C-6', 'Nakaz jazdy prosto lub w prawo', 'C',
+  'Możesz jechać na wprost albo skręcić w prawo. Skręt w lewo jest zabroniony.',
+  g => { tloKolo(g, R_NIEB, R_NIEB, 0);
+    g.save(); g.strokeStyle = R_BIAL; g.lineWidth = 19;
+    g.beginPath(); g.moveTo(112, 198); g.lineTo(112, 82); g.stroke();
+    g.beginPath(); g.moveTo(112, 148); g.lineTo(152, 148); g.stroke();
+    g.fillStyle = R_BIAL;
+    g.beginPath(); g.moveTo(112, 56); g.lineTo(84, 96); g.lineTo(140, 96); g.closePath(); g.fill();
+    g.beginPath(); g.moveTo(196, 148); g.lineTo(150, 122); g.lineTo(150, 174); g.closePath(); g.fill(); g.restore(); });
+
+Z('C9', 'C-9', 'Nakaz jazdy z prawej strony znaku', 'C',
+  'Omiń przeszkodę (wysepkę, słupek) prawą stroną.',
+  g => { tloKolo(g, R_NIEB, R_NIEB, 0); strzalka(g, 118, 150, 140, 0.5, 20, R_BIAL); });
+
+Z('C12', 'C-12', 'Ruch okrężny', 'C',
+  'Nakaz jazdy dookoła wyspy zgodnie ze strzałkami. Sam znak nie daje pierwszeństwa — decyduje o tym A-7 lub B-20 pod nim.',
+  g => { tloKolo(g, R_NIEB, R_NIEB, 0);
+    for (let i = 0; i < 3; i++) { g.save(); g.translate(128, 128); g.rotate(i * Math.PI * 2 / 3);
+      g.strokeStyle = R_BIAL; g.lineWidth = 17;
+      g.beginPath(); g.arc(0, 0, 52, -1.15, 0.75); g.stroke();
+      g.fillStyle = R_BIAL; g.translate(Math.cos(0.75) * 52, Math.sin(0.75) * 52); g.rotate(0.75 + Math.PI / 2);
+      g.beginPath(); g.moveTo(0, -26); g.lineTo(-17, 10); g.lineTo(17, 10); g.closePath(); g.fill(); g.restore(); } });
+
+Z('C13', 'C-13', 'Droga dla rowerów', 'C',
+  'Droga przeznaczona dla rowerów; kierowca samochodu nie może nią jechać ani na niej parkować.',
+  g => { tloKolo(g, R_NIEB, R_NIEB, 0); rower(g, 128, 128, 1.55, R_BIAL); });
+
+Z('C16', 'C-16', 'Droga dla pieszych', 'C',
+  'Droga tylko dla pieszych. Wjazd samochodem jest zabroniony.',
+  g => { tloKolo(g, R_NIEB, R_NIEB, 0); ludzik(g, 128, 152, 1.55, R_BIAL); });
+
+/* ---------- D — informacyjne ---------- */
+Z('D1', 'D-1', 'Droga z pierwszeństwem', 'P',
+  'Jedziesz drogą z pierwszeństwem — pojazdy z dróg poprzecznych muszą Ci ustąpić. Pamiętaj: znak nie zwalnia z ostrożności ani nie daje pierwszeństwa nad pieszym na przejściu.',
+  g => { g.clearRect(0, 0, 256, 256);
+    const romb = (r, kolor) => { g.beginPath(); g.moveTo(128, 128 - r); g.lineTo(128 + r, 128);
+      g.lineTo(128, 128 + r); g.lineTo(128 - r, 128); g.closePath(); g.fillStyle = kolor; g.fill(); };
+    romb(124, R_CZAR); romb(116, R_BIAL); romb(78, R_ZOLT); });
+
+Z('D2', 'D-2', 'Koniec drogi z pierwszeństwem', 'P',
+  'Od tego miejsca obowiązuje zasada prawej ręki, chyba że inne znaki stanowią inaczej.',
+  g => { ZNAKI.D1.rys(g); g.save(); g.strokeStyle = '#6A6A6A'; g.lineWidth = 8;
+    for (let i = -1; i <= 1; i++) { g.beginPath(); g.moveTo(56 + i * 14, 200); g.lineTo(200 + i * 14, 56); g.stroke(); } g.restore(); });
+
+Z('D3', 'D-3', 'Droga jednokierunkowa', 'D',
+  'Ruch odbywa się tylko w kierunku strzałki. Możesz jechać dowolnym pasem, a wyprzedzanie prawą stroną jest dozwolone.',
+  g => { tloProstokat(g, R_NIEB); strzalka(g, 128, 160, 140, 0, 20, R_BIAL); });
+
+Z('D4a', 'D-4a', 'Droga bez przejazdu', 'D',
+  'Ślepa uliczka — dalej nie ma wyjazdu. Trzeba będzie zawrócić.',
+  g => { tloProstokat(g, R_NIEB); g.fillStyle = R_CZER; g.fillRect(60, 58, 136, 22);
+    g.fillStyle = R_BIAL; g.fillRect(116, 70, 24, 122); });
+
+Z('D6', 'D-6', 'Przejście dla pieszych', 'D',
+  'Oznacza przejście. Zbliżając się, musisz zachować szczególną ostrożność i ustąpić pieszemu, który jest na przejściu lub na nie wchodzi. Zabronione jest wyprzedzanie przed przejściem i na nim.',
+  g => { tloKwadrat(g, R_NIEB); ludzik(g, 128, 140, 1.45, R_BIAL);
+    g.fillStyle = R_BIAL; for (let i = 0; i < 4; i++) g.fillRect(66 + i * 33, 190, 18, 26); });
+
+Z('D6b', 'D-6b', 'Przejście dla pieszych i przejazd dla rowerów', 'D',
+  'Wspólne przejście i przejazd. Ustępujesz zarówno pieszemu, jak i rowerzyście wjeżdżającemu na przejazd.',
+  g => { tloKwadrat(g, R_NIEB); ludzik(g, 92, 136, 1.15, R_BIAL); rower(g, 168, 130, 1.05, R_BIAL);
+    g.fillStyle = R_BIAL; for (let i = 0; i < 4; i++) g.fillRect(66 + i * 33, 194, 18, 22); });
+
+Z('D9', 'D-9', 'Autostrada', 'D',
+  'Początek autostrady. Obowiązuje zakaz zatrzymywania poza zatokami, minimalna prędkość konstrukcyjna 40 km/h i zakaz zawracania.',
+  g => { tloProstokat(g, R_ZIEL); g.strokeStyle = R_BIAL; g.lineWidth = 15;
+    g.beginPath(); g.moveTo(56, 206); g.lineTo(96, 74); g.moveTo(200, 206); g.lineTo(160, 74); g.stroke();
+    g.lineWidth = 11; g.beginPath(); g.moveTo(128, 200); g.lineTo(128, 86); g.stroke();
+    g.fillStyle = R_BIAL; g.beginPath(); g.moveTo(128, 58); g.lineTo(106, 96); g.lineTo(150, 96); g.closePath(); g.fill(); });
+
+Z('D15', 'D-15', 'Przystanek autobusowy', 'D',
+  'W obszarze zabudowanym musisz umożliwić autobusowi włączenie się do ruchu spod przystanku.',
+  g => { tloKwadrat(g, R_NIEB); g.fillStyle = R_BIAL;
+    g.fillRect(66, 84, 124, 88); g.fillStyle = R_NIEB;
+    g.fillRect(76, 94, 46, 34); g.fillRect(134, 94, 46, 34);
+    g.fillStyle = R_BIAL; g.beginPath(); g.arc(94, 182, 14, 0, 7); g.fill();
+    g.beginPath(); g.arc(162, 182, 14, 0, 7); g.fill(); });
+
+Z('D18', 'D-18', 'Parking', 'D',
+  'Miejsce przeznaczone do postoju. Tabliczka pod znakiem może określać sposób ustawienia pojazdu.',
+  g => { tloKwadrat(g, R_NIEB); tekst(g, 'P', 128, 134, 190, R_BIAL); });
+
+Z('D21', 'D-21', 'Szpital', 'D',
+  'Informuje o szpitalu przy drodze. Unikaj hałasu, spodziewaj się karetek wyjeżdżających z sygnałem.',
+  g => { tloKwadrat(g, R_NIEB); g.fillStyle = R_BIAL;
+    g.fillRect(110, 66, 36, 124); g.fillRect(66, 110, 124, 36); });
+
+Z('D23', 'D-23', 'Stacja paliw', 'D',
+  'Punkt tankowania. Przed dłuższą trasą warto zaplanować postój.',
+  g => { tloKwadrat(g, R_NIEB); g.fillStyle = R_BIAL;
+    g.fillRect(76, 86, 76, 108); g.fillStyle = R_NIEB; g.fillRect(88, 100, 52, 32);
+    g.fillStyle = R_BIAL; g.fillRect(160, 120, 14, 74); g.fillRect(152, 186, 30, 10);
+    g.beginPath(); g.arc(167, 112, 15, 0, 7); g.fill(); });
+
+Z('D40', 'D-40', 'Strefa zamieszkania', 'D',
+  'Pieszy ma pierwszeństwo na całej szerokości drogi i może chodzić gdzie chce. Prędkość maksymalna to 20 km/h, a parkować wolno tylko w miejscach wyznaczonych.',
+  g => { tloProstokat(g, R_NIEB); g.fillStyle = R_BIAL;
+    g.fillRect(56, 120, 144, 84);
+    g.beginPath(); g.moveTo(46, 122); g.lineTo(128, 62); g.lineTo(210, 122); g.closePath(); g.fill();
+    ludzik(g, 106, 186, 0.95, R_NIEB); ludzik(g, 146, 190, 0.65, R_NIEB); });
+
+Z('D42', 'D-42', 'Obszar zabudowany', 'D',
+  'Od tego znaku obowiązuje 50 km/h (w nocy również 50 km/h) oraz zakaz używania sygnału dźwiękowego bez potrzeby.',
+  g => { tloProstokat(g, R_BIAL, 6); g.fillStyle = R_CZAR;
+    g.fillRect(48, 130, 54, 78); g.fillRect(112, 96, 44, 112); g.fillRect(166, 142, 46, 66);
+    g.fillStyle = R_BIAL; g.fillRect(60, 146, 14, 14); g.fillRect(124, 118, 16, 16); g.fillRect(180, 158, 14, 14); });
+
+Z('D43', 'D-43', 'Koniec obszaru zabudowanego', 'D',
+  'Poza obszarem zabudowanym dopuszczalna prędkość samochodu osobowego to zwykle 90 km/h.',
+  g => { ZNAKI.D42.rys(g); g.save(); g.strokeStyle = R_CZER; g.lineWidth = 9;
+    g.beginPath(); g.moveTo(44, 210); g.lineTo(214, 92); g.stroke(); g.restore(); });
+
+/* ---------- T — tabliczki ---------- */
+Z('T6a', 'T-6a', 'Przebieg drogi z pierwszeństwem', 'T',
+  'Gruba linia pokazuje, którędy biegnie droga z pierwszeństwem na skrzyżowaniu. Czytaj ją razem ze znakiem A-7, B-20 lub D-1.',
+  g => { g.clearRect(0, 0, 256, 256); g.fillStyle = R_BIAL; g.fillRect(16, 76, 224, 104);
+    g.strokeStyle = R_CZAR; g.lineWidth = 5; g.strokeRect(16, 76, 224, 104);
+    g.fillStyle = R_CZAR; g.fillRect(40, 118, 176, 20);
+    g.fillRect(118, 76, 20, 46); });
+
+Z('T1', 'T-1', 'Odległość do miejsca niebezpiecznego', 'T',
+  'Podaje, ile metrów dzieli Cię od zdarzenia opisanego znakiem nad tabliczką.',
+  g => { g.clearRect(0, 0, 256, 256); g.fillStyle = R_BIAL; g.fillRect(16, 86, 224, 84);
+    g.strokeStyle = R_CZAR; g.lineWidth = 5; g.strokeRect(16, 86, 224, 84);
+    tekst(g, '100 m', 128, 130, 56, R_CZAR); });
+
+Z('T27', 'T-27', 'Przejście dla niewidomych', 'T',
+  'Z przejścia korzystają osoby niewidome. Zatrzymaj się i poczekaj — taka osoba może potrzebować więcej czasu.',
+  g => { g.clearRect(0, 0, 256, 256); g.fillStyle = R_BIAL; g.fillRect(16, 76, 224, 104);
+    g.strokeStyle = R_CZAR; g.lineWidth = 5; g.strokeRect(16, 76, 224, 104);
+    ludzik(g, 112, 146, 0.9); g.strokeStyle = R_CZAR; g.lineWidth = 6;
+    g.beginPath(); g.moveTo(138, 116); g.lineTo(176, 172); g.stroke(); });
+
+/* ---------- cache tekstur ---------- */
+const CACHE_ZNAK = {};
+function canvasZnaku(id, param) {
+  const klucz = id + (param || '');
+  if (CACHE_ZNAK[klucz]) return CACHE_ZNAK[klucz];
+  const c = nowyCanvas(256), g = c.getContext('2d');
+  const z = ZNAKI[id];
+  if (z) {
+    z.rys(g);
+    if (z.param === 'limit' && param) { tloKolo(g, R_CZER, R_BIAL, 30); tekst(g, String(param), 128, 134, 126, R_CZAR); }
+  }
+  CACHE_ZNAK[klucz] = c;
+  return c;
+}
+function opisZnaku(id, param) {
+  const z = ZNAKI[id]; if (!z) return { kod: '?', nazwa: '?', opis: '' };
+  if (z.param === 'limit' && param)
+    return { kod: z.kod, nazwa: z.nazwa + ' do ' + param + ' km/h',
+             opis: 'Nie wolno jechać szybciej niż ' + param + ' km/h. Limit obowiązuje do najbliższego skrzyżowania lub znaku odwołującego.' };
+  return { kod: z.kod, nazwa: z.nazwa, opis: z.opis };
+}
+
+const GRUPY_ZNAKOW = [
+  { kat: 'A', tytul: 'Znaki ostrzegawcze', wstep: 'Żółty trójkąt z czerwoną obwódką. Nie zakazuje ani nie nakazuje — uprzedza o niebezpieczeństwie i zobowiązuje do zachowania szczególnej ostrożności.' },
+  { kat: 'P', tytul: 'Znaki pierwszeństwa', wstep: 'Rozstrzygają, kto jedzie pierwszy. To najczęstsza przyczyna kolizji na skrzyżowaniach, więc czytaj je zawsze razem z tabliczką T-6a.' },
+  { kat: 'B', tytul: 'Znaki zakazu', wstep: 'Okrągłe, z czerwoną obwódką. Obowiązują od miejsca ustawienia — najczęściej do najbliższego skrzyżowania.' },
+  { kat: 'C', tytul: 'Znaki nakazu', wstep: 'Niebieskie koła z białym symbolem. Wskazują jedyny dozwolony kierunek lub sposób jazdy.' },
+  { kat: 'D', tytul: 'Znaki informacyjne', wstep: 'Niebieskie prostokąty i kwadraty. Informują o organizacji ruchu i obiektach przy drodze, a część z nich wprowadza konkretne obowiązki.' },
+  { kat: 'T', tytul: 'Tabliczki do znaków', wstep: 'Same nic nie znaczą — zmieniają lub uściślają znaczenie znaku, pod którym wiszą.' }
+];
+/* ============================================================
+   Część 2: świat 3D — jezdnie, chodniki, budynki, znaki, światła
+   ============================================================ */
+
+let scena, kamera, render, swiatloSlonce, swiatloOtocz, swiatloNieba;
+const swiat = {
+  znaki: [], skrzyzowania: {}, przejscia: [], budynki: [],
+  parkingi: [], latarnie: [], grupaTrasa: null, pierscien: null
+};
+
+/* strona, po której stoi znak dla jadącego w kierunku d (ruch prawostronny) */
+const prawoOd = d => [-DIRV[d][1], DIRV[d][0]];
+/* obrót tarczy tak, by patrzyła na nadjeżdżającego z kierunku d */
+const rotZnaku = d => Math.atan2(-DIRV[d][0], -DIRV[d][1]);
+
+/* ---------- tekstury ---------- */
+function texAsfalt() {
+  const c = nowyCanvas(512), g = c.getContext('2d');
+  g.fillStyle = '#2B2E33'; g.fillRect(0, 0, 512, 512);
+  for (let i = 0; i < 7000; i++) {
+    const v = 28 + Math.random() * 26;
+    g.fillStyle = 'rgba(' + v + ',' + (v + 2) + ',' + (v + 5) + ',.6)';
+    g.fillRect(Math.random() * 512, Math.random() * 512, 3, 3);
+  }
+  const t = new THREE.CanvasTexture(c);
+  t.wrapS = t.wrapT = THREE.RepeatWrapping; t.repeat.set(8, 8);
+  return t;
+}
+function texTrawa() {
+  const c = nowyCanvas(256), g = c.getContext('2d');
+  g.fillStyle = '#2E4A2A'; g.fillRect(0, 0, 256, 256);
+  for (let i = 0; i < 3000; i++) {
+    g.fillStyle = Math.random() > .5 ? '#355731' : '#27401F';
+    g.fillRect(Math.random() * 256, Math.random() * 256, 4, 4);
+  }
+  const t = new THREE.CanvasTexture(c);
+  t.wrapS = t.wrapT = THREE.RepeatWrapping; t.repeat.set(60, 60);
+  return t;
+}
+/* zebra: jedna tekstura na wszystkie przejścia */
+function texZebra() {
+  const c = nowyCanvas(128), g = c.getContext('2d');
+  g.clearRect(0, 0, 128, 128);
+  g.fillStyle = '#F2F2E8';
+  for (let k = 0; k < 4; k++) g.fillRect(6 + k * 32, 0, 17, 128);
+  return new THREE.CanvasTexture(c);
+}
+function texLiniaPrzerywana() {
+  const c = nowyCanvas(64), g = c.getContext('2d');
+  g.clearRect(0, 0, 64, 64);
+  g.fillStyle = '#EFEFE6'; g.fillRect(0, 26, 34, 12);
+  const t = new THREE.CanvasTexture(c);
+  t.wrapS = t.wrapT = THREE.RepeatWrapping;
+  return t;
+}
+
+/* wspólne materiały i geometrie — mniej wywołań rysowania */
+let MAT = {}, GEO = {};
+const TEX_ZNAK = {};
+function texturaZnaku(id, param) {
+  const k = id + '_' + (param || '');
+  if (!TEX_ZNAK[k]) {
+    const t = new THREE.CanvasTexture(canvasZnaku(id, param));
+    t.anisotropy = 4; TEX_ZNAK[k] = t;
+  }
+  return TEX_ZNAK[k];
+}
+const MAT_ZNAK = {};
+function materialZnaku(id, param) {
+  const k = id + '_' + (param || '');
+  if (!MAT_ZNAK[k]) MAT_ZNAK[k] = new THREE.MeshBasicMaterial(
+    { map: texturaZnaku(id, param), transparent: true, alphaTest: 0.2 });
+  return MAT_ZNAK[k];
+}
+
+/* ---------- start sceny ---------- */
+function inicjujScene() {
+  scena = new THREE.Scene();
+  scena.background = new THREE.Color(0x9DB8CE);
+  scena.fog = new THREE.Fog(0x9DB8CE, 170, 560);
+
+  kamera = new THREE.PerspectiveCamera(62, innerWidth / innerHeight, 0.5, 1200);
+
+  render = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
+  render.setSize(innerWidth, innerHeight);
+  render.setPixelRatio(Math.min(devicePixelRatio, 1.6));
+  render.shadowMap.enabled = true;
+  render.shadowMap.type = THREE.PCFSoftShadowMap;
+  document.getElementById('scena').appendChild(render.domElement);
+
+  swiatloOtocz = new THREE.AmbientLight(0xFFFFFF, 0.55); scena.add(swiatloOtocz);
+  swiatloNieba = new THREE.HemisphereLight(0xBBD5EA, 0x3A4038, 0.6); scena.add(swiatloNieba);
+  swiatloSlonce = new THREE.DirectionalLight(0xFFF3DC, 0.95);
+  swiatloSlonce.position.set(120, 190, 80);
+  swiatloSlonce.castShadow = true;
+  swiatloSlonce.shadow.mapSize.set(2048, 2048);
+  const d = 170;
+  swiatloSlonce.shadow.camera.left = -d; swiatloSlonce.shadow.camera.right = d;
+  swiatloSlonce.shadow.camera.top = d; swiatloSlonce.shadow.camera.bottom = -d;
+  swiatloSlonce.shadow.camera.far = 520;
+  scena.add(swiatloSlonce); scena.add(swiatloSlonce.target);
+
+  MAT = {
+    asfalt: new THREE.MeshLambertMaterial({ map: texAsfalt() }),
+    chodnik: new THREE.MeshLambertMaterial({ color: 0x9A9A94 }),
+    krawez: new THREE.MeshLambertMaterial({ color: 0xC3C3BB }),
+    biala: new THREE.MeshBasicMaterial({ color: 0xEFEFE6 }),
+    zebra: new THREE.MeshBasicMaterial({ map: texZebra(), transparent: true }),
+    przerywana: new THREE.MeshBasicMaterial({ map: texLiniaPrzerywana(), transparent: true }),
+    slup: new THREE.MeshLambertMaterial({ color: 0x8B9096 }),
+    tylZnaku: new THREE.MeshLambertMaterial({ color: 0x76797E }),
+    slupSygn: new THREE.MeshLambertMaterial({ color: 0x2A2E33 }),
+    boxSygn: new THREE.MeshLambertMaterial({ color: 0x16191D }),
+    latarnia: new THREE.MeshLambertMaterial({ color: 0x3B4046 }),
+    pien: new THREE.MeshLambertMaterial({ color: 0x54402C }),
+    plac: new THREE.MeshLambertMaterial({ color: 0x3E4247 })
+  };
+  GEO = {
+    slup: new THREE.CylinderGeometry(0.07, 0.08, 2.6, 6),
+    tarcza: new THREE.PlaneGeometry(1, 1),
+    slupSygn: new THREE.CylinderGeometry(0.16, 0.2, 5.2, 8),
+    boxSygn: new THREE.BoxGeometry(1.0, 2.7, 0.6),
+    zarowka: new THREE.CircleGeometry(0.34, 12),
+    liniaStop: new THREE.PlaneGeometry(1, 1),
+    zebra: new THREE.PlaneGeometry(1, 1)
+  };
+
+  addEventListener('resize', () => {
+    kamera.aspect = innerWidth / innerHeight; kamera.updateProjectionMatrix();
+    render.setSize(innerWidth, innerHeight);
+  });
+}
+
+function ustawPore(noc) {
+  if (noc) {
+    scena.background = new THREE.Color(0x0A0F18);
+    scena.fog = new THREE.Fog(0x0A0F18, 40, 260);
+    swiatloOtocz.intensity = 0.20; swiatloNieba.intensity = 0.20;
+    swiatloSlonce.intensity = 0.16; swiatloSlonce.color.setHex(0x93A9D8);
+  } else {
+    scena.background = new THREE.Color(0x9DB8CE);
+    scena.fog = new THREE.Fog(0x9DB8CE, 170, 560);
+    swiatloOtocz.intensity = 0.55; swiatloNieba.intensity = 0.6;
+    swiatloSlonce.intensity = 0.95; swiatloSlonce.color.setHex(0xFFF3DC);
+  }
+  swiat.latarnie.forEach(m => { m.emissiveIntensity = noc ? 1.2 : 0; });
+}
+
+/* ---------- miasto ---------- */
+function budujMiasto() {
+  const G = new THREE.Group(); scena.add(G);
+
+  const teren = new THREE.Mesh(new THREE.PlaneGeometry(KRANIEC * 2.6, KRANIEC * 2.6),
+    new THREE.MeshLambertMaterial({ map: texTrawa() }));
+  teren.rotation.x = -Math.PI / 2; teren.position.y = -0.06; teren.receiveShadow = true; G.add(teren);
+
+  const dl = KRANIEC * 2;
+  for (let i = 0; i < NG; i++) {
+    const poz = new THREE.Mesh(new THREE.PlaneGeometry(dl, POL_HALF * 2), MAT.asfalt);
+    poz.rotation.x = -Math.PI / 2; poz.position.set(0, 0, P(i)); poz.receiveShadow = true; G.add(poz);
+    const pion = new THREE.Mesh(new THREE.PlaneGeometry(POL_HALF * 2, dl), MAT.asfalt);
+    pion.rotation.x = -Math.PI / 2; pion.position.set(P(i), 0.001, 0); pion.receiveShadow = true; G.add(pion);
+  }
+
+  for (let i = 0; i < NG - 1; i++)
+    for (let j = 0; j < NG - 1; j++) {
+      const cx = (P(i) + P(i + 1)) / 2, cz = (P(j) + P(j + 1)) / 2;
+      const bok = SP - POL_HALF * 2;
+      const kr = new THREE.Mesh(new THREE.BoxGeometry(bok + 0.6, 0.36, bok + 0.6), MAT.krawez);
+      kr.position.set(cx, 0.14, cz); kr.receiveShadow = true; G.add(kr);
+      const ch = new THREE.Mesh(new THREE.BoxGeometry(bok - 0.4, 0.38, bok - 0.4), MAT.chodnik);
+      ch.position.set(cx, 0.16, cz); ch.receiveShadow = true; G.add(ch);
+      budujKwartal(G, cx, cz, bok, i, j);
+    }
+
+  budujOznaczeniaPoziome(G);
+  budujSkrzyzowania(G);
+  budujLatarnie(G);
+  rozstawZnaki(G);
+  swiat.grupaTrasa = new THREE.Group(); scena.add(swiat.grupaTrasa);
+}
+
+const PALETA_BUD = [
+  ['#8C7B6B', '#FFE9B8'], ['#6E7480', '#FFF0C4'], ['#9A6E62', '#FFE6A8'],
+  ['#77836E', '#F7EDC0'], ['#5E6672', '#FFE8AE'], ['#A08B72', '#FFF2CC'],
+  ['#6B5F73', '#FFE4A0'], ['#846A5C', '#FFEFC0']
+];
+let MAT_BUD = null;
+function texBudynek(kolorBazowy, okna) {
+  const c = nowyCanvas(256), g = c.getContext('2d');
+  g.fillStyle = kolorBazowy; g.fillRect(0, 0, 256, 256);
+  for (let y = 16; y < 240; y += 34)
+    for (let x = 14; x < 240; x += 30) {
+      g.fillStyle = Math.random() < .35 ? okna : 'rgba(20,24,30,.82)';
+      g.fillRect(x, y, 18, 22);
+      g.fillStyle = 'rgba(255,255,255,.05)'; g.fillRect(x, y, 18, 4);
+    }
+  const t = new THREE.CanvasTexture(c);
+  t.wrapS = t.wrapT = THREE.RepeatWrapping;
+  return t;
+}
+function materialyBudynkow() {
+  if (!MAT_BUD) MAT_BUD = PALETA_BUD.map(([k, o]) =>
+    new THREE.MeshLambertMaterial({ map: texBudynek(k, o) }));
+  return MAT_BUD;
+}
+
+function budujKwartal(G, cx, cz, bok, i, j) {
+  const wolny = bok - CHOD * 2;
+  const seed = (i * 13 + j * 7) % 5;
+  if (seed === 4) {
+    const traw = new THREE.Mesh(new THREE.PlaneGeometry(wolny, wolny),
+      new THREE.MeshLambertMaterial({ color: 0x3C6B34 }));
+    traw.rotation.x = -Math.PI / 2; traw.position.set(cx, 0.36, cz); G.add(traw);
+    for (let k = 0; k < 7; k++) drzewo(G, cx + losuj(-wolny / 2.6, wolny / 2.6), cz + losuj(-wolny / 2.6, wolny / 2.6));
+    return;
+  }
+  const ile = seed === 3 ? 2 : (2 + (seed % 3));
+  for (let k = 0; k < ile; k++) {
+    const w = wolny / (ile > 2 ? 2 : 1) - 3.5;
+    const gx = cx + (k % 2 ? 1 : -1) * (ile > 2 ? wolny / 4 : 0);
+    const gz = cz + (k > 1 ? 1 : -1) * (ile > 2 ? wolny / 4 : 0);
+    swiat.budynki.push(postawBudynek(G, gx, gz, w, w, losuj(12, 50)));
+  }
+}
+function postawBudynek(G, x, z, w, d, h) {
+  const mat = losEl(materialyBudynkow());
+  const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat);
+  m.position.set(x, h / 2 + 0.34, z); m.castShadow = true; m.receiveShadow = true; G.add(m);
+  const dach = new THREE.Mesh(new THREE.BoxGeometry(w + 0.8, 0.7, d + 0.8),
+    new THREE.MeshLambertMaterial({ color: 0x3A3D42 }));
+  dach.position.set(x, h + 0.65, z); G.add(dach);
+  return { x, z, w, d, h };
+}
+function drzewo(G, x, z) {
+  const pien = new THREE.Mesh(new THREE.CylinderGeometry(0.35, 0.5, 4, 6), MAT.pien);
+  pien.position.set(x, 2.3, z); G.add(pien);
+  const kor = new THREE.Mesh(new THREE.SphereGeometry(2.8, 8, 6),
+    new THREE.MeshLambertMaterial({ color: losEl([0x2F5D2A, 0x3A6E30, 0x28522A]) }));
+  kor.position.set(x, 5.6, z); kor.castShadow = true; G.add(kor);
+}
+
+/* ---------- oznaczenia poziome ---------- */
+function budujOznaczeniaPoziome(G) {
+  const y = 0.02;
+  /* osiowa linia przerywana — jeden mesh na odcinek */
+  for (let r = 0; r < NG; r++)
+    for (let s = 0; s < NG - 1; s++) {
+      const a = P(s) + POL_HALF + 9, b = P(s + 1) - POL_HALF - 9, dlg = b - a;
+      if (dlg <= 0) continue;
+      const mkPoz = () => {
+        const mat = MAT.przerywana.clone();
+        mat.map = MAT.przerywana.map.clone(); mat.map.needsUpdate = true;
+        mat.map.repeat.set(dlg / 9, 1);
+        return mat;
+      };
+      const m1 = new THREE.Mesh(new THREE.PlaneGeometry(dlg, 0.5), mkPoz());
+      m1.rotation.x = -Math.PI / 2; m1.position.set(a + dlg / 2, y, P(r)); G.add(m1);
+      const m2 = new THREE.Mesh(new THREE.PlaneGeometry(0.5, dlg), mkPoz());
+      m2.rotation.x = -Math.PI / 2; m2.rotation.z = Math.PI / 2;
+      m2.position.set(P(r), y, a + dlg / 2); G.add(m2);
+    }
+
+  /* przejścia dla pieszych + linie zatrzymania */
+  for (let i = 0; i < NG; i++)
+    for (let j = 0; j < NG; j++)
+      for (let d = 0; d < 4; d++) {
+        const [dx, dz] = DIRV[d];
+        const px = P(i) + dx * (POL_HALF + 3.6), pz = P(j) + dz * (POL_HALF + 3.6);
+        if (Math.abs(px) > KRANIEC || Math.abs(pz) > KRANIEC) continue;
+        const poziomo = dx !== 0;     // przejście przez ulicę biegnącą wzdłuż X
+        /* pasy: szerokość przejścia 4,6 m wzdłuż osi drogi, długość = szerokość jezdni */
+        const zeb = new THREE.Mesh(GEO.zebra, MAT.zebra);
+        zeb.rotation.x = -Math.PI / 2;
+        zeb.scale.set(poziomo ? 4.6 : POL_HALF * 2, poziomo ? POL_HALF * 2 : 4.6, 1);
+        if (!poziomo) zeb.rotation.z = Math.PI / 2;
+        zeb.position.set(px, y, pz); G.add(zeb);
+        swiat.przejscia.push({ x: px, z: pz, poziomo, i, j, d });
+
+        /* linia zatrzymania na prawym pasie, przed przejściem */
+        const [rx, rz] = prawoOd((d + 2) % 4);      // pas jadących w stronę skrzyżowania
+        const lx = P(i) + dx * (POL_HALF + 6.6) + rx * PAS;
+        const lz = P(j) + dz * (POL_HALF + 6.6) + rz * PAS;
+        const lin = new THREE.Mesh(GEO.liniaStop, MAT.biala);
+        lin.rotation.x = -Math.PI / 2;
+        lin.scale.set(poziomo ? 0.5 : POL_HALF, poziomo ? POL_HALF : 0.5, 1);
+        lin.position.set(lx, y, lz); G.add(lin);
+      }
+}
+
+/* ---------- skrzyżowania ---------- */
+function budujSkrzyzowania(G) {
+  for (let i = 0; i < NG; i++)
+    for (let j = 0; j < NG; j++) {
+      const obaGlowne = PRIORYTET_PION.indexOf(i) >= 0 && PRIORYTET_POZ.indexOf(j) >= 0;
+      const swiatla = obaGlowne || ((i + j) % 4 === 0 && i > 0 && j > 0 && i < NG - 1 && j < NG - 1);
+      const dane = { i, j, x: P(i), z: P(j), swiatla, faza: swiatla ? Math.random() * 46 : 0,
+        stanNS: 'zielone', stanEW: 'czerwone', regula: {} };
+      for (let d = 0; d < 4; d++) {
+        const wzdluzPion = (d === 1 || d === 3);
+        const ulicaGlowna = wzdluzPion ? PRIORYTET_PION.indexOf(i) >= 0 : PRIORYTET_POZ.indexOf(j) >= 0;
+        const poprzGlowna = wzdluzPion ? PRIORYTET_POZ.indexOf(j) >= 0 : PRIORYTET_PION.indexOf(i) >= 0;
+        if (swiatla) dane.regula[d] = 'swiatla';
+        else if (ulicaGlowna && !poprzGlowna) dane.regula[d] = 'glowna';
+        else if (poprzGlowna && !ulicaGlowna) dane.regula[d] = ((i * 3 + j * 5) % 3 === 0) ? 'stop' : 'ustap';
+        else dane.regula[d] = 'prawa';
+      }
+      if (i === 2 && j === 4) dane.zakazLewo = true;
+      if (i === 4 && j === 2) dane.zakazPrawo = true;
+      if (i === 1 && j === 5) dane.zakazLewo = true;
+      swiat.skrzyzowania[i + '_' + j] = dane;
+      if (swiatla) postawSygnalizacje(G, dane);
+    }
+}
+
+function postawSygnalizacje(G, sk) {
+  sk.lampy = [];
+  for (let d = 0; d < 4; d++) {
+    const [dx, dz] = DIRV[d], [rx, rz] = prawoOd(d);
+    const x = sk.x + dx * (POL_HALF + 6.5) + rx * (PAS + 4.5);
+    const z = sk.z + dz * (POL_HALF + 6.5) + rz * (PAS + 4.5);
+    const grupa = new THREE.Group(); grupa.position.set(x, 0, z);
+    const slup = new THREE.Mesh(GEO.slupSygn, MAT.slupSygn); slup.position.y = 2.6; grupa.add(slup);
+    const box = new THREE.Mesh(GEO.boxSygn, MAT.boxSygn); box.position.y = 5.9; grupa.add(box);
+    const bazowe = [0x3A1012, 0x3A3212, 0x113A1C], zarowki = [];
+    for (let k = 0; k < 3; k++) {
+      const mat = new THREE.MeshLambertMaterial(
+        { color: bazowe[k], emissive: bazowe[k], emissiveIntensity: 0.3 });
+      const zar = new THREE.Mesh(GEO.zarowka, mat);
+      zar.position.set(0, 6.75 - k * 0.85, 0.33);
+      grupa.add(zar); zarowki.push(mat);
+    }
+    grupa.rotation.y = rotZnaku(d);
+    G.add(grupa);
+    sk.lampy.push({ d, mat: zarowki });
+  }
+}
+
+function aktualizujSwiatla(dt) {
+  const on = [0xD8232A, 0xF7C948, 0x2FBF5C], off = [0x3A1012, 0x3A3212, 0x113A1C];
+  for (const k in swiat.skrzyzowania) {
+    const sk = swiat.skrzyzowania[k];
+    if (!sk.swiatla) continue;
+    sk.faza = (sk.faza + dt) % 46;
+    const f = sk.faza;
+    if (f < 18) { sk.stanNS = 'zielone'; sk.stanEW = 'czerwone'; }
+    else if (f < 21) { sk.stanNS = 'zolte'; sk.stanEW = 'czerwone'; }
+    else if (f < 23) { sk.stanNS = 'czerwone'; sk.stanEW = 'czerwone'; }
+    else if (f < 41) { sk.stanNS = 'czerwone'; sk.stanEW = 'zielone'; }
+    else if (f < 44) { sk.stanNS = 'czerwone'; sk.stanEW = 'zolte'; }
+    else { sk.stanNS = 'czerwone'; sk.stanEW = 'czerwone'; }
+    if (!sk.lampy) continue;
+    for (const l of sk.lampy) {
+      const st = (l.d === 1 || l.d === 3) ? sk.stanNS : sk.stanEW;
+      const idx = st === 'czerwone' ? 0 : st === 'zolte' ? 1 : 2;
+      for (let k2 = 0; k2 < 3; k2++) {
+        const akt = k2 === idx;
+        l.mat[k2].color.setHex(akt ? on[k2] : off[k2]);
+        l.mat[k2].emissive.setHex(akt ? on[k2] : off[k2]);
+        l.mat[k2].emissiveIntensity = akt ? 1.2 : 0.25;
+      }
+    }
+  }
+}
+function stanSwiatla(sk, d) { return (d === 1 || d === 3) ? sk.stanNS : sk.stanEW; }
+
+/* ---------- latarnie (bez świateł punktowych — wydajność) ---------- */
+function budujLatarnie(G) {
+  const geoSlup = new THREE.CylinderGeometry(0.13, 0.18, 8, 6);
+  const geoKlosz = new THREE.BoxGeometry(1.6, 0.32, 0.8);
+  for (let i = 0; i < NG; i++)
+    for (let s = 0; s < NG - 1; s++) {
+      const sr = (P(s) + P(s + 1)) / 2;
+      [[P(i) + POL_HALF + 1.6, sr, -1, 0], [sr, P(i) + POL_HALF + 1.6, 0, -1]].forEach(([x, z, kx, kz]) => {
+        const slup = new THREE.Mesh(geoSlup, MAT.latarnia);
+        slup.position.set(x, 4, z); G.add(slup);
+        const mat = new THREE.MeshLambertMaterial(
+          { color: 0xEFE6C8, emissive: 0xFFE2A0, emissiveIntensity: 0 });
+        const kl2 = new THREE.Mesh(geoKlosz, mat);
+        kl2.position.set(x + kx * 0.9, 7.9, z + kz * 0.9); G.add(kl2);
+        swiat.latarnie.push(mat);
+      });
+    }
+}
+
+/* ---------- znaki ---------- */
+function postawZnak(G, id, x, z, d, param, skala) {
+  const s = skala || 1.35, rot = rotZnaku(d);
+  const tarcza = new THREE.Mesh(GEO.tarcza, materialZnaku(id, param));
+  tarcza.scale.set(s, s, 1); tarcza.position.set(x, 2.55, z); tarcza.rotation.y = rot;
+  const tyl = new THREE.Mesh(GEO.tarcza, MAT.tylZnaku);
+  tyl.scale.set(s, s, 1); tyl.position.set(x, 2.55, z); tyl.rotation.y = rot + Math.PI;
+  const slup = new THREE.Mesh(GEO.slup, MAT.slup); slup.position.set(x, 1.3, z);
+  G.add(tarcza); G.add(tyl); G.add(slup);
+  swiat.znaki.push({ id, param, x, z, rot });
+}
+/* znak przy jezdni: punkt na osi drogi + odsunięcie na prawą stronę kierunku d */
+function znakPrzyJezdni(G, id, osX, osZ, d, param, skala) {
+  const [rx, rz] = prawoOd(d), bok = POL_HALF + 2.3;
+  postawZnak(G, id, osX + rx * bok, osZ + rz * bok, d, param, skala);
+}
+
+function rozstawZnaki(G) {
+  /* znaki pierwszeństwa i przejścia na każdym wlocie */
+  for (let i = 0; i < NG; i++)
+    for (let j = 0; j < NG; j++) {
+      const sk = swiat.skrzyzowania[i + '_' + j];
+      for (let d = 0; d < 4; d++) {
+        const [dx, dz] = DIRV[d];
+        const osX = sk.x - dx * (POL_HALF + 5.5), osZ = sk.z - dz * (POL_HALF + 5.5);
+        if (Math.abs(osX) > KRANIEC + 6 || Math.abs(osZ) > KRANIEC + 6) continue;
+        const reg = sk.regula[d];
+        if (reg === 'stop') znakPrzyJezdni(G, 'B20', osX, osZ, d);
+        else if (reg === 'ustap') znakPrzyJezdni(G, 'A7', osX, osZ, d);
+        else if (reg === 'glowna') znakPrzyJezdni(G, 'D1', osX, osZ, d, null, 1.2);
+        else if (reg === 'swiatla' && (i + j) % 4 === 0)
+          znakPrzyJezdni(G, 'A29', osX - dx * 14, osZ - dz * 14, d);
+        znakPrzyJezdni(G, 'D6', sk.x - dx * (POL_HALF + 1.5), sk.z - dz * (POL_HALF + 1.5), d, null, 1.2);
+      }
+    }
+
+  /* ograniczenia prędkości na wjazdach w ulice o innym limicie */
+  for (let i = 0; i < NG; i++)
+    for (let j = 0; j < NG; j++) {
+      if (LIMIT_PION[i] !== 50) {
+        znakPrzyJezdni(G, 'B33', P(i), P(j) + POL_HALF + 13, 3, LIMIT_PION[i]);
+        znakPrzyJezdni(G, 'B33', P(i), P(j) - POL_HALF - 13, 1, LIMIT_PION[i]);
+      }
+      if (LIMIT_POZ[j] !== 50) {
+        znakPrzyJezdni(G, 'B33', P(i) + POL_HALF + 13, P(j), 2, LIMIT_POZ[j]);
+        znakPrzyJezdni(G, 'B33', P(i) - POL_HALF - 13, P(j), 0, LIMIT_POZ[j]);
+      }
+    }
+
+  /* ulica jednokierunkowa: B-2 dla wjeżdżających pod prąd, D-3 dla jadących zgodnie */
+  const ji = JEDNOKIER_PION;
+  for (let j = 0; j < NG; j++) {
+    znakPrzyJezdni(G, 'B2', P(ji), P(j) + POL_HALF + 10, 1);
+    znakPrzyJezdni(G, 'D3', P(ji), P(j) - POL_HALF - 10, 3, null, 1.2);
+  }
+
+  /* zakazy skrętu */
+  for (const k in swiat.skrzyzowania) {
+    const sk = swiat.skrzyzowania[k];
+    if (!sk.zakazLewo && !sk.zakazPrawo) continue;
+    for (let d = 0; d < 4; d++) {
+      const [dx, dz] = DIRV[d];
+      znakPrzyJezdni(G, sk.zakazLewo ? 'B21' : 'B22',
+        sk.x - dx * (POL_HALF + 11), sk.z - dz * (POL_HALF + 11), d);
+    }
+  }
+
+  /* katalog znaków rozsiany po mieście — do nauki podczas jazdy */
+  const dekoracyjne = ['A1', 'A2', 'A4', 'A6a', 'A6c', 'A8', 'A11', 'A11a', 'A12a', 'A14', 'A15', 'A16',
+    'A17', 'A18b', 'A21', 'A24', 'A30', 'A32', 'B1', 'B5', 'B9', 'B23', 'B25', 'B26', 'B34',
+    'B35', 'B36', 'B41', 'B43', 'C2', 'C4', 'C5', 'C6', 'C9', 'C12', 'C13', 'C16', 'D2',
+    'D4a', 'D6b', 'D9', 'D15', 'D18', 'D21', 'D23', 'D40', 'D42', 'D43', 'T6a', 'T1', 'T27'];
+  let idx = 0;
+  for (let i = 0; i < NG; i++)
+    for (let s = 0; s < NG - 1; s++) {
+      const sr = (P(s) + P(s + 1)) / 2;
+      znakPrzyJezdni(G, dekoracyjne[idx++ % dekoracyjne.length], P(i), sr + losuj(-14, 14), 3);
+      znakPrzyJezdni(G, dekoracyjne[idx++ % dekoracyjne.length], sr + losuj(-14, 14), P(i), 2);
+    }
+
+  /* zatoki parkingowe do misji manewrowych */
+  [[1, 1], [4, 3], [2, 5], [5, 4]].forEach(([i, j]) => {
+    const x = P(i) + POL_HALF + 2.3, z = P(j) + SP * 0.35;
+    const plac = new THREE.Mesh(new THREE.PlaneGeometry(4.4, 12), MAT.plac);
+    plac.rotation.x = -Math.PI / 2; plac.position.set(x, 0.4, z); G.add(plac);
+    [-2.2, 2.2].forEach(ox => {
+      const l = new THREE.Mesh(new THREE.PlaneGeometry(0.22, 12), MAT.biala);
+      l.rotation.x = -Math.PI / 2; l.position.set(x + ox, 0.42, z); G.add(l);
+    });
+    znakPrzyJezdni(G, 'D18', P(i), z - 8.5, 3, null, 1.2);
+    swiat.parkingi.push({ x, z, kat: Math.PI / 2, szer: 4.4, dl: 12, misyjny: true, i, j });
+  });
+}
+/* ============================================================
+   Część 3: auto gracza, kamera, ruch uliczny, piesi
+   ============================================================ */
+
+/* ---------- model samochodu ---------- */
+function zbudujAuto(kolor, gracza) {
+  const g = new THREE.Group();
+  const lakier = new THREE.MeshLambertMaterial({ color: kolor });
+  const szyby = new THREE.MeshLambertMaterial({ color: 0x1E2933 });
+
+  const nadwozie = new THREE.Mesh(new THREE.BoxGeometry(2.0, 0.72, 4.3), lakier);
+  nadwozie.position.y = 0.78; nadwozie.castShadow = true; g.add(nadwozie);
+  const dol = new THREE.Mesh(new THREE.BoxGeometry(1.86, 0.34, 4.0),
+    new THREE.MeshLambertMaterial({ color: 0x15181C }));
+  dol.position.y = 0.44; g.add(dol);
+  const kabina = new THREE.Mesh(new THREE.BoxGeometry(1.76, 0.66, 2.1), lakier);
+  kabina.position.set(0, 1.4, -0.18); kabina.castShadow = true; g.add(kabina);
+  const okno = new THREE.Mesh(new THREE.BoxGeometry(1.8, 0.5, 1.92), szyby);
+  okno.position.set(0, 1.42, -0.18); g.add(okno);
+  const dach = new THREE.Mesh(new THREE.BoxGeometry(1.7, 0.12, 2.0), lakier);
+  dach.position.set(0, 1.76, -0.18); g.add(dach);
+
+  const matKolo = new THREE.MeshLambertMaterial({ color: 0x101214 });
+  const kola = [];
+  [[-0.94, 1.35], [0.94, 1.35], [-0.94, -1.42], [0.94, -1.42]].forEach(([x, z]) => {
+    const k = new THREE.Mesh(new THREE.CylinderGeometry(0.42, 0.42, 0.3, 12), matKolo);
+    k.rotation.z = Math.PI / 2; k.position.set(x, 0.42, z); k.castShadow = true;
+    g.add(k); kola.push(k);
+  });
+
+  const matLampa = new THREE.MeshLambertMaterial({ color: 0xFFF6D8, emissive: 0xFFF0C0, emissiveIntensity: 0.45 });
+  [[-0.62, 2.18], [0.62, 2.18]].forEach(([x, z]) => {
+    const l = new THREE.Mesh(new THREE.BoxGeometry(0.42, 0.2, 0.1), matLampa);
+    l.position.set(x, 0.86, z); g.add(l);
+  });
+  const matStop = new THREE.MeshLambertMaterial({ color: 0x8E1B1B, emissive: 0xC01818, emissiveIntensity: 0.3 });
+  const stopy = [];
+  [[-0.62, -2.18], [0.62, -2.18]].forEach(([x, z]) => {
+    const l = new THREE.Mesh(new THREE.BoxGeometry(0.42, 0.2, 0.1), matStop);
+    l.position.set(x, 0.86, z); g.add(l); stopy.push(l.material);
+  });
+
+  if (gracza) {
+    const sw1 = new THREE.SpotLight(0xFFF0CC, 0, 68, 0.44, 0.5, 1.4);
+    sw1.position.set(0, 0.95, 2.1); sw1.target.position.set(0, 0, 22);
+    g.add(sw1); g.add(sw1.target);
+    g.userData.reflektor = sw1;
+  }
+  g.userData.stopy = stopy[0];
+  scena.add(g);
+  return g;
+}
+
+/* ---------- auto gracza ---------- */
+const auto = {
+  x: 0, z: 0, kier: 0,       // kierunek w radianach (0 = +x)
+  v: 0,                      // m/s (dodatnie = przód)
+  skret: 0,                  // kąt kół
+  mesh: null,
+  bieg: 'D',
+  drgania: 0
+};
+
+const KLAWISZE = { gaz: false, ham: false, lewo: false, prawo: false };
+addEventListener('keydown', e => {
+  if (e.code === 'ArrowUp') { KLAWISZE.gaz = true; e.preventDefault(); }
+  if (e.code === 'ArrowDown') { KLAWISZE.ham = true; e.preventDefault(); }
+  if (e.code === 'ArrowLeft') { KLAWISZE.lewo = true; e.preventDefault(); }
+  if (e.code === 'ArrowRight') { KLAWISZE.prawo = true; e.preventDefault(); }
+});
+addEventListener('keyup', e => {
+  if (e.code === 'ArrowUp') KLAWISZE.gaz = false;
+  if (e.code === 'ArrowDown') KLAWISZE.ham = false;
+  if (e.code === 'ArrowLeft') KLAWISZE.lewo = false;
+  if (e.code === 'ArrowRight') KLAWISZE.prawo = false;
+});
+
+const MOC = 7.4;             // m/s² przyspieszenia
+const HAMULEC = 13.5;        // m/s² hamowania
+const OPOR_TOCZ = 1.15;      // opór toczenia — auto samo zwalnia
+const OPOR_POW = 0.0055;     // opór powietrza (rośnie z kwadratem prędkości)
+const V_MAX = 46;            // ~165 km/h
+const V_WSTECZ = -6.5;
+const ROZSTAW = 2.7;         // rozstaw osi
+
+function fizykaAuta(dt) {
+  const kmh = auto.v * 3.6;
+
+  /* --- napęd i hamowanie --- */
+  if (KLAWISZE.gaz) {
+    if (auto.v < -0.4) auto.v += HAMULEC * dt;            // gaz przy cofaniu = hamowanie
+    else { auto.bieg = 'D'; auto.v += MOC * (1 - Math.min(0.72, Math.abs(auto.v) / V_MAX)) * dt; }
+  }
+  if (KLAWISZE.ham) {
+    if (auto.v > 0.4) auto.v -= HAMULEC * dt;
+    else { auto.bieg = 'R'; auto.v -= MOC * 0.55 * dt; }  // bieg wsteczny
+  }
+  /* --- bezwładność: auto toczy się dalej --- */
+  if (!KLAWISZE.gaz && !KLAWISZE.ham) {
+    const opor = (OPOR_TOCZ + OPOR_POW * auto.v * auto.v) * dt;
+    if (auto.v > 0) auto.v = Math.max(0, auto.v - opor);
+    else if (auto.v < 0) auto.v = Math.min(0, auto.v + opor);
+    if (Math.abs(auto.v) < 0.05) { auto.v = 0; auto.bieg = 'P'; }
+  } else if (auto.v > 0) {
+    auto.v -= OPOR_POW * auto.v * auto.v * dt;
+  }
+  auto.v = kl(auto.v, V_WSTECZ, V_MAX);
+
+  /* --- kierownica: im szybciej, tym delikatniej --- */
+  const maxSkret = 0.58 / (1 + Math.abs(auto.v) * 0.085);
+  const tempo = 3.4;
+  let cel = 0;
+  if (KLAWISZE.lewo) cel += maxSkret;
+  if (KLAWISZE.prawo) cel -= maxSkret;
+  auto.skret += (cel - auto.skret) * Math.min(1, tempo * dt);
+  if (!KLAWISZE.lewo && !KLAWISZE.prawo) auto.skret *= Math.max(0, 1 - 6 * dt);
+
+  /* --- model rowerowy --- */
+  if (Math.abs(auto.v) > 0.05) {
+    const omega = (auto.v / ROZSTAW) * Math.tan(auto.skret);
+    auto.kier = kat(auto.kier + omega * dt);
+  }
+  auto.x += Math.cos(auto.kier) * auto.v * dt;
+  auto.z += Math.sin(auto.kier) * auto.v * dt;
+
+  /* granice mapy */
+  const lim = KRANIEC + 10;
+  if (Math.abs(auto.x) > lim) { auto.x = kl(auto.x, -lim, lim); auto.v *= -0.2; }
+  if (Math.abs(auto.z) > lim) { auto.z = kl(auto.z, -lim, lim); auto.v *= -0.2; }
+
+  /* --- prezentacja --- */
+  const m = auto.mesh;
+  m.position.set(auto.x, 0, auto.z);
+  m.rotation.y = -auto.kier + Math.PI / 2;
+  const przechyl = kl(-auto.skret * auto.v * 0.012, -0.06, 0.06);
+  m.rotation.z = lerp(m.rotation.z, przechyl, 0.12);
+  const nurkowanie = KLAWISZE.ham && auto.v > 1 ? 0.035 : (KLAWISZE.gaz ? -0.018 : 0);
+  m.rotation.x = lerp(m.rotation.x, nurkowanie, 0.1);
+  m.userData.stopy.emissiveIntensity = (KLAWISZE.ham && auto.v > 0.2) ? 1.4 : 0.3;
+  return kmh;
+}
+
+/* ---------- kamera ---------- */
+const kamCel = new THREE.Vector3();
+function aktualizujKamere(dt, natychmiast) {
+  const dyst = 11.5 + Math.abs(auto.v) * 0.16;
+  const wys = 5.4 + Math.abs(auto.v) * 0.05;
+  const tx = auto.x - Math.cos(auto.kier) * dyst;
+  const tz = auto.z - Math.sin(auto.kier) * dyst;
+  const k = natychmiast ? 1 : Math.min(1, dt * 3.6);
+  kamera.position.x = lerp(kamera.position.x, tx, k);
+  kamera.position.z = lerp(kamera.position.z, tz, k);
+  kamera.position.y = lerp(kamera.position.y, wys, k);
+  kamCel.set(auto.x + Math.cos(auto.kier) * 8, 1.4, auto.z + Math.sin(auto.kier) * 8);
+  kamera.lookAt(kamCel);
+}
+
+/* ============================================================
+   RUCH ULICZNY — auta sterowane komputerem
+   ============================================================ */
+const ruch = [];
+const KOLORY_AUT = [0xB4322F, 0x2F5FA8, 0xE0E2E4, 0x2E3236, 0x3E7A4A, 0xD1A32B, 0x7A4F9C, 0x9AA0A6];
+
+function punktPasa(i, j, d, przed) {
+  // punkt na prawym pasie ulicy prowadzącej do skrzyżowania (i,j) z kierunku d
+  const [dx, dz] = DIRV[d];
+  const px = P(i) - dx * przed + (dx !== 0 ? 0 : (dz > 0 ? -PAS : PAS));
+  const pz = P(j) - dz * przed + (dz !== 0 ? 0 : (dx > 0 ? PAS : -PAS));
+  return { x: px, z: pz };
+}
+
+function stworzRuch(ile) {
+  while (ruch.length) { const stary = ruch.pop(); scena.remove(stary.mesh); }
+  for (let n = 0; n < ile; n++) {
+    const i = Math.floor(losuj(0, NG)), j = Math.floor(losuj(0, NG));
+    const d = Math.floor(losuj(0, 4));
+    const a = {
+      i, j, d,
+      mesh: zbudujAuto(losEl(KOLORY_AUT), false),
+      v: losuj(6, 11), vDoc: losuj(7, 12),
+      faza: 'dojazd',
+      czekaj: 0
+    };
+    const p = punktPasa(i, j, d, losuj(18, SP - 24));
+    a.x = p.x; a.z = p.z; a.kier = dirKat(d);
+    wyznaczCelAI(a);
+    ruch.push(a);
+  }
+}
+
+function wyznaczCelAI(a) {
+  const wj = punktPasa(a.i, a.j, a.d, POL_HALF + 5);
+  a.celX = wj.x; a.celZ = wj.z; a.faza = 'dojazd';
+}
+
+function nastepnyKierunek(a) {
+  const opcje = [];
+  for (let d = 0; d < 4; d++) {
+    if ((d + 2) % 4 === a.d) continue;                 // bez zawracania
+    const ni = a.i + DIRV[d][0], nj = a.j + DIRV[d][1];
+    if (ni < 0 || nj < 0 || ni >= NG || nj >= NG) continue;
+    if (ni === JEDNOKIER_PION && d !== JEDNOKIER_DIR && (d === 1)) continue;
+    let waga = d === a.d ? 5 : 1;
+    opcje.push({ d, waga });
+  }
+  if (!opcje.length) return (a.d + 2) % 4;
+  let suma = opcje.reduce((s, o) => s + o.waga, 0), r = Math.random() * suma;
+  for (const o of opcje) { r -= o.waga; if (r <= 0) return o.d; }
+  return opcje[0].d;
+}
+
+function aktualizujRuch(dt) {
+  for (const a of ruch) {
+    const dx = a.celX - a.x, dz = a.celZ - a.z;
+    const dyst = Math.hypot(dx, dz);
+    const celKier = Math.atan2(dz, dx);
+    const roznica = kat(celKier - a.kier);
+    a.kier = kat(a.kier + kl(roznica, -2.2 * dt, 2.2 * dt));
+
+    /* czy zwolnić? */
+    let vCel = a.vDoc;
+    if (a.faza === 'dojazd' && dyst < 26) {
+      const sk = swiat.skrzyzowania[a.i + '_' + a.j];
+      let musiStac = false;
+      if (sk.swiatla) {
+        const st = stanSwiatla(sk, a.d);
+        if (st === 'czerwone' || (st === 'zolte' && dyst > 6)) musiStac = true;
+      } else {
+        const reg = sk.regula[a.d];
+        if (reg === 'stop' && !a.zatrzymalSie) musiStac = dyst < 8;
+        else if (reg === 'ustap' || reg === 'prawa') {
+          if (dyst < 12 && kolizyjnyRuch(a)) musiStac = true;
+        }
+      }
+      if (musiStac) vCel = 0;
+      else if (dyst < 10) vCel = Math.min(vCel, 6);
+    }
+    /* pieszy na przejściu przed autem */
+    if (pieszyPrzedAutem(a)) vCel = 0;
+    /* auto z przodu */
+    if (pojazdPrzedAutem(a)) vCel = 0;
+    /* gracz z przodu */
+    const gx = auto.x - a.x, gz = auto.z - a.z;
+    const przod = gx * Math.cos(a.kier) + gz * Math.sin(a.kier);
+    const bok = -gx * Math.sin(a.kier) + gz * Math.cos(a.kier);
+    if (przod > 0 && przod < 13 && Math.abs(bok) < 3.0) vCel = 0;
+
+    const przysp = vCel > a.v ? 4.2 : 9.5;
+    a.v += kl(vCel - a.v, -przysp * dt, przysp * dt);
+    a.v = Math.max(0, a.v);
+    if (a.v < 0.2 && vCel === 0) a.zatrzymalSie = true;
+
+    a.x += Math.cos(a.kier) * a.v * dt;
+    a.z += Math.sin(a.kier) * a.v * dt;
+
+    if (dyst < 3.2) {
+      if (a.faza === 'dojazd') {
+        const nd = nastepnyKierunek(a);
+        a.zatrzymalSie = false;
+        const wy = punktPasa(a.i + DIRV[nd][0], a.j + DIRV[nd][1], nd, SP - POL_HALF - 5);
+        a.celX = wy.x; a.celZ = wy.z;
+        a.d = nd; a.faza = 'przejazd';
+      } else {
+        a.i += DIRV[a.d][0]; a.j += DIRV[a.d][1];
+        a.i = kl(a.i, 0, NG - 1); a.j = kl(a.j, 0, NG - 1);
+        wyznaczCelAI(a);
+      }
+    }
+    a.mesh.position.set(a.x, 0, a.z);
+    a.mesh.rotation.y = -a.kier + Math.PI / 2;
+    a.mesh.userData.stopy.emissiveIntensity = a.v < 1 ? 1.3 : 0.3;
+  }
+}
+
+function kolizyjnyRuch(a) {
+  for (const b of ruch) {
+    if (b === a) continue;
+    if (Math.hypot(b.x - P(a.i), b.z - P(a.j)) < 20 && b.v > 1.5) {
+      const wzgl = kat(Math.atan2(P(a.j) - b.z, P(a.i) - b.x) - b.kier);
+      if (Math.abs(wzgl) < 0.6) return true;
+    }
+  }
+  const dG = Math.hypot(auto.x - P(a.i), auto.z - P(a.j));
+  if (dG < 18 && Math.abs(auto.v) > 2) return true;
+  return false;
+}
+function pojazdPrzedAutem(a) {
+  for (const b of ruch) {
+    if (b === a) continue;
+    const dx = b.x - a.x, dz = b.z - a.z;
+    const przod = dx * Math.cos(a.kier) + dz * Math.sin(a.kier);
+    const bok = -dx * Math.sin(a.kier) + dz * Math.cos(a.kier);
+    if (przod > 0 && przod < 11 && Math.abs(bok) < 2.4) return true;
+  }
+  return false;
+}
+function pieszyPrzedAutem(a) {
+  for (const p of piesi) {
+    if (!p.naJezdni) continue;
+    const dx = p.x - a.x, dz = p.z - a.z;
+    const przod = dx * Math.cos(a.kier) + dz * Math.sin(a.kier);
+    const bok = -dx * Math.sin(a.kier) + dz * Math.cos(a.kier);
+    if (przod > 0 && przod < 15 && Math.abs(bok) < 4.5) return true;
+  }
+  return false;
+}
+
+/* ============================================================
+   PIESI
+   ============================================================ */
+const piesi = [];
+function zbudujPieszego(kolor) {
+  const g = new THREE.Group();
+  const tul = new THREE.Mesh(new THREE.BoxGeometry(0.46, 0.72, 0.28),
+    new THREE.MeshLambertMaterial({ color: kolor }));
+  tul.position.y = 1.14; tul.castShadow = true; g.add(tul);
+  const gl = new THREE.Mesh(new THREE.SphereGeometry(0.19, 10, 8),
+    new THREE.MeshLambertMaterial({ color: 0xE0B48C }));
+  gl.position.y = 1.68; g.add(gl);
+  const matN = new THREE.MeshLambertMaterial({ color: 0x2B3038 });
+  const nogi = [];
+  [[-0.14], [0.14]].forEach(([x]) => {
+    const n = new THREE.Mesh(new THREE.BoxGeometry(0.17, 0.78, 0.2), matN);
+    n.position.set(x, 0.4, 0); g.add(n); nogi.push(n);
+  });
+  g.userData.nogi = nogi;
+  scena.add(g);
+  return g;
+}
+
+function stworzPieszych(ile) {
+  while (piesi.length) { const stary = piesi.pop(); scena.remove(stary.mesh); }
+  for (let n = 0; n < ile; n++) {
+    const pk = losEl(swiat.przejscia);
+    const p = {
+      przejscie: pk,
+      t: Math.random(),
+      kierunek: Math.random() < .5 ? 1 : -1,
+      stan: 'czeka',
+      czekaj: losuj(1, 12),
+      v: losuj(1.1, 1.7),
+      mesh: zbudujPieszego(losEl([0x2F5FA8, 0xB4322F, 0x3E7A4A, 0xD1A32B, 0x6A4E8C, 0xE2E4E6])),
+      naJezdni: false, x: 0, z: 0, faza: Math.random() * 6
+    };
+    piesi.push(p);
+  }
+}
+
+function aktualizujPieszych(dt) {
+  for (const p of piesi) {
+    const pk = p.przejscie;
+    const dlug = POL_HALF + 2.6;
+    if (p.stan === 'czeka') {
+      p.czekaj -= dt;
+      p.t = p.kierunek > 0 ? 0 : 1;
+      if (p.czekaj <= 0) {
+        // rozejrzyj się: wchodzi, jeśli nie nadjeżdża nic tuż obok
+        const blisko = Math.hypot(auto.x - pk.x, auto.z - pk.z) < 12 && Math.abs(auto.v) > 9;
+        if (!blisko) { p.stan = 'idzie'; }
+        else p.czekaj = 1.2;
+      }
+    } else {
+      p.t += (p.kierunek * p.v * dt) / (dlug * 2);
+      if (p.t > 1.05 || p.t < -0.05) {
+        p.kierunek *= -1; p.stan = 'czeka'; p.czekaj = losuj(4, 16);
+        p.t = kl(p.t, 0, 1);
+      }
+    }
+    const u = (p.t - 0.5) * dlug * 2;
+    if (pk.poziomo) { p.x = pk.x; p.z = pk.z + u; }
+    else { p.x = pk.x + u; p.z = pk.z; }
+    p.naJezdni = p.stan === 'idzie' && Math.abs(u) < POL_HALF + 0.6;
+    p.mesh.position.set(p.x, 0, p.z);
+    p.mesh.rotation.y = pk.poziomo ? (p.kierunek > 0 ? 0 : Math.PI) : (p.kierunek > 0 ? -Math.PI / 2 : Math.PI / 2);
+    if (p.stan === 'idzie') {
+      p.faza += dt * 7;
+      p.mesh.userData.nogi[0].rotation.x = Math.sin(p.faza) * 0.6;
+      p.mesh.userData.nogi[1].rotation.x = -Math.sin(p.faza) * 0.6;
+    }
+  }
+}
+/* ============================================================
+   Część 4: ocena przepisów, misje, mapa, interfejs
+   ============================================================ */
+
+/* ---------- gdzie jestem na siatce ---------- */
+function wezelNajblizszy(x, z) {
+  const i = kl(Math.round(x / SP + (NG - 1) / 2), 0, NG - 1);
+  const j = kl(Math.round(z / SP + (NG - 1) / 2), 0, NG - 1);
+  return { i, j };
+}
+function kierunekZKata(k) {
+  let naj = 0, best = 9;
+  for (let d = 0; d < 4; d++) { const r = Math.abs(kat(dirKat(d) - k)); if (r < best) { best = r; naj = d; } }
+  return naj;
+}
+function infoJezdni(x, z) {
+  const { i, j } = wezelNajblizszy(x, z);
+  const naPion = Math.abs(x - P(i)) <= POL_HALF + 0.4;
+  const naPoz = Math.abs(z - P(j)) <= POL_HALF + 0.4;
+  return { i, j, naPion, naPoz, naJezdni: naPion || naPoz };
+}
+function limitTutaj(x, z) {
+  const inf = infoJezdni(x, z);
+  const d = kierunekZKata(auto.kier);
+  const wzdluzPion = (d === 1 || d === 3);
+  if (wzdluzPion && inf.naPion) return LIMIT_PION[inf.i];
+  if (!wzdluzPion && inf.naPoz) return LIMIT_POZ[inf.j];
+  if (inf.naPion) return LIMIT_PION[inf.i];
+  if (inf.naPoz) return LIMIT_POZ[inf.j];
+  return 50;
+}
+
+/* ============================================================
+   REJESTR WYKROCZEŃ
+   ============================================================ */
+const stanGry = {
+  punkty: 100, bledy: [], krytyczne: 0, start: 0, czas: 0,
+  misja: null, nrMisji: 0, aktywna: false, trasa: [], wyniki: {}
+};
+const ostatnieZgloszenie = {};
+
+function wykroczenie(kod, tytul, wyjasnienie, kara, krytyczne) {
+  const t = performance.now();
+  if (ostatnieZgloszenie[kod] && t - ostatnieZgloszenie[kod] < 3500) return;
+  ostatnieZgloszenie[kod] = t;
+  stanGry.punkty = Math.max(0, stanGry.punkty - kara);
+  if (krytyczne) stanGry.krytyczne++;
+  const istn = stanGry.bledy.find(b => b.kod === kod);
+  if (istn) istn.ile++;
+  else stanGry.bledy.push({ kod, tytul, wyjasnienie, kara, ile: 1, krytyczne: !!krytyczne });
+  pokazToast('blad', tytul, wyjasnienie, '−' + kara);
+  odswiezPunkty();
+}
+function pochwala(tytul, tresc) { pokazToast('ok', tytul, tresc, ''); }
+function podpowiedz(tytul, tresc) { pokazToast('info', tytul, tresc, ''); }
+
+function pokazToast(typ, tytul, tresc, kara) {
+  const box = document.getElementById('komunikaty');
+  const el = document.createElement('div');
+  el.className = 'toast ' + typ;
+  el.innerHTML = '<div class="tyt"><span></span><span class="kara"></span></div><div class="tresc"></div>';
+  el.querySelector('.tyt span').textContent = tytul;
+  el.querySelector('.kara').textContent = kara || '';
+  el.querySelector('.tresc').textContent = tresc;
+  box.appendChild(el);
+  while (box.children.length > 3) box.removeChild(box.firstChild);
+  setTimeout(() => el.remove(), typ === 'blad' ? 7600 : 6200);
+}
+
+/* ============================================================
+   SĘDZIA — obserwuje jazdę
+   ============================================================ */
+const sedzia = {
+  podejscie: null,        // {klucz,d,minV,stop,swiatloWjazd,kierWjazdu}
+  wSkrzyzowaniu: false,
+  skrzKlucz: null,
+  kierWjazdu: 0,
+  czasZly: 0, czasPoza: 0, czasPredkosc: 0, czasPodPrad: 0,
+  ostatniaKolizja: 0
+};
+
+function ocenJazde(dt, kmh) {
+  const inf = infoJezdni(auto.x, auto.z);
+  const d = kierunekZKata(auto.kier);
+  const sk = swiat.skrzyzowania[inf.i + '_' + inf.j];
+  const dx = auto.x - sk.x, dz = auto.z - sk.z;
+  const wRdzeniu = Math.abs(dx) < POL_HALF + 1.5 && Math.abs(dz) < POL_HALF + 1.5;
+
+  /* --- 1. prędkość --- */
+  const limit = limitTutaj(auto.x, auto.z);
+  stanGry.limit = limit;
+  if (kmh > limit + 6) {
+    sedzia.czasPredkosc += dt;
+    if (sedzia.czasPredkosc > 1.4) {
+      sedzia.czasPredkosc = 0;
+      wykroczenie('predkosc' + limit, 'Przekroczona prędkość',
+        'Jedziesz ' + Math.round(kmh) + ' km/h, a znak B-33 ogranicza prędkość do ' + limit +
+        ' km/h. Droga hamowania rośnie z kwadratem prędkości — przy 70 km/h jest ponad dwa razy dłuższa niż przy 50.', 6);
+    }
+  } else sedzia.czasPredkosc = Math.max(0, sedzia.czasPredkosc - dt);
+
+  /* --- 2. wjazd pod prąd (B-2) --- */
+  if (inf.naPion && inf.i === JEDNOKIER_PION && d === 1 && Math.abs(auto.v) > 3) {
+    sedzia.czasPodPrad += dt;
+    if (sedzia.czasPodPrad > 0.8) {
+      sedzia.czasPodPrad = 0;
+      wykroczenie('podprad', 'Jazda pod prąd',
+        'Ulica ' + NAZWY_PION[JEDNOKIER_PION] + ' jest jednokierunkowa (znak D-3), a jej wlot zamyka znak B-2 „zakaz wjazdu”. Zawróć przy najbliższej okazji.', 20, true);
+    }
+  } else sedzia.czasPodPrad = 0;
+
+  /* --- 3. jazda lewą stroną --- */
+  if (Math.abs(auto.v) > 3 && inf.i !== JEDNOKIER_PION) {
+    let zlaStrona = false;
+    if ((d === 0 || d === 2) && inf.naPoz) {
+      const bok = auto.z - P(inf.j);
+      zlaStrona = (d === 0 && bok < -1.2) || (d === 2 && bok > 1.2);
+    } else if ((d === 1 || d === 3) && inf.naPion) {
+      const bok = auto.x - P(inf.i);
+      zlaStrona = (d === 1 && bok > 1.2) || (d === 3 && bok < -1.2);
+    }
+    if (zlaStrona && !wRdzeniu) {
+      sedzia.czasZly += dt;
+      if (sedzia.czasZly > 2.2) {
+        sedzia.czasZly = 0;
+        wykroczenie('lewastrona', 'Jedziesz lewą stroną jezdni',
+          'W Polsce obowiązuje ruch prawostronny. Trzymaj się prawego pasa — na lewym możesz zderzyć się czołowo z nadjeżdżającym pojazdem.', 12, true);
+      }
+    } else sedzia.czasZly = 0;
+  }
+
+  /* --- 4. zjazd z jezdni --- */
+  if (!inf.naJezdni && Math.abs(auto.v) > 1.5 && !naParkingu()) {
+    sedzia.czasPoza += dt;
+    if (sedzia.czasPoza > 1.2) {
+      sedzia.czasPoza = 0;
+      wykroczenie('pozajezdnia', 'Zjechałeś z jezdni',
+        'Samochód znalazł się poza jezdnią — na chodniku, trawniku albo torowisku. Chodnik jest dla pieszych; wjazd na niego to poważne naruszenie.', 10);
+    }
+  } else sedzia.czasPoza = 0;
+
+  /* --- 5. podejście do skrzyżowania --- */
+  const doSrodka = Math.hypot(dx, dz);
+  const zblizaSie = (dx * Math.cos(auto.kier) + dz * Math.sin(auto.kier)) < 0;
+  const klucz = inf.i + '_' + inf.j + '_' + d;
+
+  if (!wRdzeniu && zblizaSie && doSrodka < 30 && Math.abs(auto.v) > 0.2) {
+    if (!sedzia.podejscie || sedzia.podejscie.klucz !== klucz) {
+      sedzia.podejscie = { klucz, sk, d, minV: 99, stop: false, ocenione: false };
+      zapowiedzSkrzyzowanie(sk, d);
+    }
+    const p = sedzia.podejscie;
+    p.minV = Math.min(p.minV, Math.abs(auto.v));
+    if (Math.abs(auto.v) < 0.55 && doSrodka < POL_HALF + 14) p.stop = true;
+    p.swiatlo = sk.swiatla ? stanSwiatla(sk, d) : null;
+  }
+
+  /* --- 6. wjazd na skrzyżowanie: wyrok --- */
+  if (wRdzeniu && !sedzia.wSkrzyzowaniu) {
+    sedzia.wSkrzyzowaniu = true;
+    sedzia.skrzKlucz = inf.i + '_' + inf.j;
+    sedzia.kierWjazdu = d;
+    const p = sedzia.podejscie;
+    if (p && p.sk === sk && !p.ocenione && Math.abs(auto.v) > 0.3) {
+      p.ocenione = true;
+      const reg = sk.regula[p.d];
+      if (sk.swiatla) {
+        const st = stanSwiatla(sk, p.d);
+        if (st === 'czerwone')
+          wykroczenie('czerwone', 'Wjazd na czerwonym świetle',
+            'Przekroczyłeś linię zatrzymania przy czerwonym sygnale. To jedno z najgroźniejszych wykroczeń — na egzaminie oznacza natychmiastowy wynik negatywny. Czerwone światło zawsze oznacza zatrzymanie przed linią.', 30, true);
+        else if (st === 'zolte' && p.minV > 6)
+          wykroczenie('zolte', 'Wjazd na żółtym świetle',
+            'Żółte światło zabrania wjazdu za linię, chyba że w chwili jego zapalenia nie mogłeś się już bezpiecznie zatrzymać. Tutaj miałeś czas na zatrzymanie.', 8);
+        else if (st === 'zielone' && !p.zaliczone) pochwala('Dobry przejazd', 'Zielone światło i płynny wjazd na skrzyżowanie. Pamiętaj, by mimo zielonego upewnić się, że skrzyżowanie jest wolne.');
+      } else if (reg === 'stop') {
+        if (!p.stop)
+          wykroczenie('stop', 'Brak zatrzymania przed znakiem STOP',
+            'Znak B-20 nakazuje bezwzględne zatrzymanie pojazdu przed linią, nawet gdy droga jest pusta. Samo zwolnienie nie wystarczy — koła muszą stanąć.', 22, true);
+        else pochwala('Prawidłowy STOP', 'Zatrzymałeś się całkowicie przed linią i ruszyłeś po upewnieniu się, że droga jest wolna.');
+      } else if (reg === 'ustap') {
+        const kol = ruchNaKolizji(sk, p.d);
+        if (kol && p.minV > 3.2)
+          wykroczenie('ustap', 'Nie ustąpiłeś pierwszeństwa',
+            'Znak A-7 zobowiązuje do ustąpienia pierwszeństwa pojazdom na drodze z pierwszeństwem. Ustąpić znaczy: nie zmusić innego kierującego do hamowania ani zmiany kierunku.', 25, true);
+        else if (p.minV > 8.5)
+          wykroczenie('ustap_szybko', 'Za szybki wjazd przy znaku A-7',
+            'Przy znaku „ustąp pierwszeństwa” musisz zbliżać się na tyle wolno, by móc się zatrzymać. Wjazd z prędkością ' + Math.round(p.minV * 3.6) + ' km/h to za dużo.', 8);
+        else pochwala('Poprawne ustąpienie', 'Zwolniłeś przed znakiem A-7 i upewniłeś się, że droga poprzeczna jest wolna.');
+      } else if (reg === 'prawa') {
+        const kol = ruchZPrawej(sk, p.d);
+        if (kol && p.minV > 2.6)
+          wykroczenie('prawareka', 'Złamana zasada prawej ręki',
+            'Na skrzyżowaniu równorzędnym (bez znaków i sygnalizacji) pierwszeństwo ma pojazd nadjeżdżający z prawej strony. Tutaj z prawej nadjeżdżał pojazd, a Ty wjechałeś przed niego.', 25, true);
+      } else if (reg === 'glowna' && p.minV > 13.5) {
+        wykroczenie('glowna_szybko', 'Za szybko przez skrzyżowanie',
+          'Masz pierwszeństwo (znak D-1), ale obowiązuje zasada ograniczonego zaufania. Przez skrzyżowanie przejeżdża się z prędkością pozwalającą zareagować na cudzy błąd.', 6);
+      }
+    }
+  }
+  if (!wRdzeniu && sedzia.wSkrzyzowaniu && doSrodka > POL_HALF + 5) {
+    sedzia.wSkrzyzowaniu = false;
+    const skPrz = swiat.skrzyzowania[sedzia.skrzKlucz];
+    if (skPrz) {
+      const wyjazd = d, wjazd = sedzia.kierWjazdu;
+      const roznica = (wyjazd - wjazd + 4) % 4;
+      if (roznica === 3 && skPrz.zakazLewo)
+        wykroczenie('zakazlewo', 'Skręt wbrew znakowi B-21',
+          'Przed skrzyżowaniem stał znak „zakaz skręcania w lewo”. Obowiązuje on na najbliższym skrzyżowaniu i zabrania również zawracania.', 18, true);
+      if (roznica === 1 && skPrz.zakazPrawo)
+        wykroczenie('zakazprawo', 'Skręt wbrew znakowi B-22',
+          'Znak B-22 zabraniał skrętu w prawo na tym skrzyżowaniu. Trzeba było pojechać prosto i zawrócić w dozwolonym miejscu.', 18, true);
+      if (roznica === 2)
+        wykroczenie('zawracanie', 'Zawracanie na skrzyżowaniu',
+          'Zawróciłeś na skrzyżowaniu. To manewr dopuszczalny tylko wtedy, gdy nie zabrania go znak i gdy nie utrudnia ruchu — tutaj było ryzykowne.', 6);
+    }
+  }
+
+  /* --- 7. piesi na przejściu --- */
+  for (const p of piesi) {
+    if (!p.naJezdni) continue;
+    const rx = p.x - auto.x, rz = p.z - auto.z;
+    const przod = rx * Math.cos(auto.kier) + rz * Math.sin(auto.kier);
+    const bok = -rx * Math.sin(auto.kier) + rz * Math.cos(auto.kier);
+    if (przod > -1 && przod < 11 && Math.abs(bok) < 4.2 && auto.v * 3.6 > 12)
+      wykroczenie('pieszy_brak', 'Nie ustąpiłeś pieszemu',
+        'Pieszy znajduje się na przejściu, a Ty jedziesz ' + Math.round(auto.v * 3.6) +
+        ' km/h. Kierujący ma obowiązek ustąpić pierwszeństwa pieszemu na przejściu i wchodzącemu na nie — trzeba zatrzymać się przed pasami.', 20, true);
+  }
+
+  /* --- 8. kolizje --- */
+  sprawdzKolizje();
+
+  /* --- 9. cel misji --- */
+  sprawdzCel(kmh);
+}
+
+function naParkingu() {
+  for (const pk of swiat.parkingi)
+    if (Math.abs(auto.x - pk.x) < pk.szer / 2 + 1.5 && Math.abs(auto.z - pk.z) < pk.dl / 2 + 1.5) return true;
+  return false;
+}
+function ruchNaKolizji(sk, d) {
+  for (const a of ruch) {
+    if (a.v < 1.2) continue;
+    const dyst = Math.hypot(a.x - sk.x, a.z - sk.z);
+    if (dyst > 34) continue;
+    const doSrodka = Math.atan2(sk.z - a.z, sk.x - a.x);
+    if (Math.abs(kat(doSrodka - a.kier)) > 0.7) continue;
+    const ad = kierunekZKata(a.kier);
+    if (ad !== d && (ad + 2) % 4 !== d) return true;     // jedzie drogą poprzeczną
+  }
+  return false;
+}
+function ruchZPrawej(sk, d) {
+  const prawy = (d + 1) % 4;                 // kierunek, z którego nadjeżdża pojazd z prawej
+  for (const a of ruch) {
+    if (a.v < 1.2) continue;
+    if (Math.hypot(a.x - sk.x, a.z - sk.z) > 26) continue;
+    const ad = kierunekZKata(a.kier);
+    if (ad === (prawy + 2) % 4) return true;
+  }
+  return false;
+}
+
+function sprawdzKolizje() {
+  /* budynki */
+  for (const b of swiat.budynki) {
+    const nx = kl(auto.x, b.x - b.w / 2, b.x + b.w / 2);
+    const nz = kl(auto.z, b.z - b.d / 2, b.z + b.d / 2);
+    if (Math.hypot(auto.x - nx, auto.z - nz) < 1.9) {
+      const kx = auto.x - nx, kz = auto.z - nz;
+      const dl = Math.hypot(kx, kz) || 1;
+      auto.x = nx + kx / dl * 2.1; auto.z = nz + kz / dl * 2.1;
+      if (Math.abs(auto.v) > 2)
+        wykroczenie('kolizja_bud', 'Uderzenie w przeszkodę',
+          'Samochód uderzył w budynek. Przy manewrach patrz w lusterka i oceniaj gabaryty auta — najczęściej uszkadza się nadwozie przy parkowaniu.', 15, true);
+      auto.v *= -0.15;
+    }
+  }
+  /* inne auta */
+  for (const a of ruch) {
+    if (Math.hypot(a.x - auto.x, a.z - auto.z) < 3.5) {
+      wykroczenie('kolizja_auto', 'Kolizja z innym pojazdem',
+        'Doszło do zderzenia. Zachowuj bezpieczny odstęp — przy 50 km/h to około 25 metrów, czyli mniej więcej połowa wartości prędkościomierza w metrach.', 30, true);
+      const kx = auto.x - a.x, kz = auto.z - a.z, dl = Math.hypot(kx, kz) || 1;
+      auto.x = a.x + kx / dl * 3.7; auto.z = a.z + kz / dl * 3.7;
+      auto.v *= -0.2; a.v = 0;
+    }
+  }
+  /* piesi */
+  for (const p of piesi) {
+    if (Math.hypot(p.x - auto.x, p.z - auto.z) < 1.7 && Math.abs(auto.v) > 0.6) {
+      wykroczenie('potracenie', 'Potrącenie pieszego',
+        'To najcięższy błąd, jaki można popełnić. Pieszy jest niechroniony — przy 50 km/h szansa na jego przeżycie spada poniżej 20%. Zbliżając się do przejścia, zawsze zdejmuj nogę z gazu.', 45, true);
+      auto.v = 0;
+      p.stan = 'czeka'; p.czekaj = 8;
+    }
+  }
+}
+
+/* ---------- zapowiedź skrzyżowania (nauka) ---------- */
+let ostatniaZapowiedz = '';
+function zapowiedzSkrzyzowanie(sk, d) {
+  if (!stanGry.misja || stanGry.misja.bezPodpowiedzi) return;
+  const klucz = sk.i + '_' + sk.j + '_' + d;
+  if (klucz === ostatniaZapowiedz) return;
+  ostatniaZapowiedz = klucz;
+  const reg = sk.regula[d];
+  if (sk.swiatla) podpowiedz('Skrzyżowanie z sygnalizacją',
+    'Sygnalizacja zastępuje znaki pierwszeństwa. Obserwuj sygnalizator dla swojego kierunku i pamiętaj, że zielone nie zwalnia z ustąpienia pieszym przy skręcie.');
+  else if (reg === 'stop') podpowiedz('Znak B-20 — STOP',
+    'Musisz zatrzymać się całkowicie przed linią, nawet jeśli nikt nie jedzie. Dopiero potem ruszaj.');
+  else if (reg === 'ustap') podpowiedz('Znak A-7 — ustąp pierwszeństwa',
+    'Zwolnij tak, by móc się zatrzymać. Przepuść pojazdy jadące drogą z pierwszeństwem.');
+  else if (reg === 'glowna') podpowiedz('Droga z pierwszeństwem (D-1)',
+    'Masz pierwszeństwo przed pojazdami z dróg poprzecznych, ale zachowaj ograniczone zaufanie.');
+  else podpowiedz('Skrzyżowanie równorzędne',
+    'Brak znaków oznacza zasadę prawej ręki: ustępujesz pojazdowi nadjeżdżającemu z prawej strony.');
+}
+
+/* ============================================================
+   MISJE
+   ============================================================ */
+const MISJE = [
+  { nazwa: 'Pierwsze metry', trudnosc: 1, ruch: 4, piesi: 4,
+    opis: 'Poznaj reakcje samochodu. Dojedź prosto ulicą Piastowską do wskazanego skrzyżowania i zatrzymaj się na nim.',
+    start: { i: 1, j: 2, d: 0 }, cel: { i: 4, j: 2 },
+    wskazowki: ['Strzałka ↑ dodaje gazu, ↓ hamuje. Po puszczeniu gazu auto toczy się dalej — to bezwładność.',
+      'Kierownica działa tylko podczas jazdy, a im szybciej jedziesz, tym mniej auto skręca.',
+      'Cel uznaje się za osiągnięty po zatrzymaniu się w jego obrębie.'] },
+
+  { nazwa: 'Skręt w prawo', trudnosc: 1, ruch: 6, piesi: 6,
+    opis: 'Przećwicz skręt w prawo. Skręcając, zawsze jedziesz blisko prawej krawędzi i ustępujesz pieszym na przejściu.',
+    start: { i: 2, j: 1, d: 1 }, cel: { i: 5, j: 3 },
+    wskazowki: ['Przed skrętem zwolnij do około 20 km/h — w łuku nie hamuje się gwałtownie.',
+      'Skręcając w prawo, ustępujesz pieszemu przechodzącemu przez jezdnię, w którą wjeżdżasz.',
+      'Po skręcie wracasz na prawy pas nowej ulicy.'] },
+
+  { nazwa: 'Skręt w lewo', trudnosc: 2, ruch: 8, piesi: 6,
+    opis: 'Skręt w lewo wymaga przecięcia toru jazdy pojazdów z naprzeciwka. Wykonaj go spokojnie i bezpiecznie.',
+    start: { i: 5, j: 4, d: 2 }, cel: { i: 2, j: 1 },
+    wskazowki: ['Skręcając w lewo, ustępujesz pierwszeństwa pojazdom jadącym z przeciwka na wprost.',
+      'Nie ścinaj zakrętu — środek skrzyżowania omijasz tak, by nie wjechać na przeciwny pas.',
+      'Jeśli nie masz pewności, że zdążysz, poczekaj. Pośpiech na skrzyżowaniu kosztuje najwięcej.'] },
+
+  { nazwa: 'Znak STOP', trudnosc: 2, ruch: 10, piesi: 6,
+    opis: 'Na trasie napotkasz znaki B-20. Każdy z nich wymaga całkowitego zatrzymania pojazdu przed linią.',
+    start: { i: 1, j: 4, d: 0 }, cel: { i: 4, j: 5 },
+    wskazowki: ['Zatrzymanie oznacza prędkość zero — prędkościomierz musi pokazać 0 km/h.',
+      'Zatrzymujesz się przed linią, a jeśli jej nie widzisz, przed samym skrzyżowaniem.',
+      'Po zatrzymaniu ruszasz dopiero wtedy, gdy masz pewność, że droga jest wolna.'] },
+
+  { nazwa: 'Ustąp pierwszeństwa', trudnosc: 2, ruch: 12, piesi: 6,
+    opis: 'Znak A-7 nie każe się zatrzymywać, ale każe ustąpić. Naucz się rozpoznawać, kiedy trzeba stanąć, a kiedy można płynnie wjechać.',
+    start: { i: 5, j: 1, d: 3 }, cel: { i: 2, j: 3 },
+    wskazowki: ['„Ustąpić pierwszeństwa” to nie zmusić innego kierującego do hamowania lub zmiany kierunku.',
+      'Do znaku A-7 dojeżdżaj z prędkością pozwalającą na zatrzymanie — zwykle 15–20 km/h.',
+      'Tabliczka T-6a pod znakiem pokazuje, którędy biegnie droga z pierwszeństwem.'] },
+
+  { nazwa: 'Sygnalizacja świetlna', trudnosc: 2, ruch: 12, piesi: 8,
+    opis: 'Przejedź przez skrzyżowania z sygnalizacją. Na czerwonym stój przed linią, na żółtym zatrzymaj się, jeśli możesz to zrobić bezpiecznie.',
+    start: { i: 3, j: 1, d: 1 }, cel: { i: 3, j: 5 },
+    wskazowki: ['Żółte po zielonym oznacza: zatrzymaj się, chyba że jesteś już zbyt blisko linii.',
+      'Sygnalizacja ma pierwszeństwo przed znakami pierwszeństwa — znaki obowiązują, gdy światła są wyłączone.',
+      'Zielone nie oznacza „jedź bez patrzenia” — najpierw upewnij się, że skrzyżowanie jest wolne.'] },
+
+  { nazwa: 'Przejścia dla pieszych', trudnosc: 2, ruch: 10, piesi: 16,
+    opis: 'Miasto pełne pieszych. Przećwicz podjeżdżanie do przejść i ustępowanie pierwszeństwa.',
+    start: { i: 0, j: 3, d: 0 }, cel: { i: 5, j: 3 },
+    wskazowki: ['Pieszy ma pierwszeństwo na przejściu i wchodząc na nie. Zatrzymaj się przed pasami.',
+      'Przed przejściem i na nim obowiązuje bezwzględny zakaz wyprzedzania.',
+      'Znak D-6 oznacza przejście, a A-16 uprzedza o nim wcześniej.'] },
+
+  { nazwa: 'Strefa 30', trudnosc: 2, ruch: 10, piesi: 12,
+    opis: 'Ulica Kwiatowa ma ograniczenie do 30 km/h. Utrzymaj prędkość przez cały odcinek.',
+    start: { i: 1, j: 0, d: 1 }, cel: { i: 1, j: 5 },
+    wskazowki: ['Znak B-33 obowiązuje do najbliższego skrzyżowania albo do znaku odwołującego B-34.',
+      'W obszarze zabudowanym limit podstawowy to 50 km/h przez całą dobę.',
+      'Płynna jazda na stałej prędkości zużywa mniej paliwa niż szarpanie gazem.'] },
+
+  { nazwa: 'Zakaz wjazdu', trudnosc: 3, ruch: 12, piesi: 10,
+    opis: 'Ulica Jaśminowa jest jednokierunkowa. Dojedź do celu, nie wjeżdżając w nią pod prąd.',
+    start: { i: 3, j: 5, d: 0 }, cel: { i: 6, j: 2 },
+    wskazowki: ['Znak B-2 „zakaz wjazdu” najczęściej stoi na wylocie ulicy jednokierunkowej.',
+      'Znak D-3 od strony wjazdu potwierdza, że jedziesz zgodnie z kierunkiem ruchu.',
+      'Na drodze jednokierunkowej wolno wyprzedzać również prawą stroną.'] },
+
+  { nazwa: 'Zakazy skrętu', trudnosc: 3, ruch: 14, piesi: 10,
+    opis: 'Na trasie stoją znaki B-21 i B-22. Zaplanuj przejazd tak, by nie skręcić tam, gdzie nie wolno.',
+    start: { i: 0, j: 5, d: 0 }, cel: { i: 4, j: 1 },
+    wskazowki: ['Znak zakazu skrętu obowiązuje na najbliższym skrzyżowaniu za znakiem.',
+      'Zakaz skrętu w lewo oznacza też zakaz zawracania.',
+      'Gdy przegapisz zjazd, nie kombinuj — objedź kwartał.'] },
+
+  { nazwa: 'Droga z pierwszeństwem', trudnosc: 3, ruch: 16, piesi: 10,
+    opis: 'Przejedź ulicą Wolności — drogą z pierwszeństwem. Sprawdź, czy potrafisz jechać płynnie, nie tracąc czujności.',
+    start: { i: 0, j: 3, d: 0 }, cel: { i: 6, j: 3 },
+    wskazowki: ['Żółty romb D-1 oznacza, że masz pierwszeństwo aż do znaku D-2.',
+      'Pierwszeństwo nie zwalnia z ostrożności — ktoś może go nie ustąpić.',
+      'Pierwszeństwo nigdy nie działa wobec pieszego na przejściu.'] },
+
+  { nazwa: 'Parkowanie', trudnosc: 3, ruch: 8, piesi: 8, typ: 'parking',
+    opis: 'Dojedź do miejsca oznaczonego znakiem D-18 i zaparkuj równolegle do krawężnika, w obrębie linii.',
+    start: { i: 1, j: 0, d: 1 }, parking: 0,
+    wskazowki: ['Manewruj powoli — przy parkowaniu liczy się precyzja, nie tempo.',
+      'Strzałka ↓ przy zatrzymanym aucie włącza bieg wsteczny.',
+      'Auto musi stanąć w obrębie linii, równolegle do krawężnika, z prędkością zero.'] },
+
+  { nazwa: 'Przez pół miasta', trudnosc: 3, ruch: 18, piesi: 14,
+    opis: 'Dłuższa trasa z kilkoma zmianami kierunku. Trzymaj się mapy i czytaj znaki na bieżąco.',
+    start: { i: 0, j: 0, d: 0 }, cel: { i: 5, j: 5 },
+    wskazowki: ['Zielona linia na mapie pokazuje sugerowaną trasę — nie jest obowiązkowa.',
+      'Planuj manewr wcześniej: pas i prędkość dobiera się przed skrzyżowaniem, nie na nim.',
+      'Jeśli zgubisz drogę, zatrzymaj się w bezpiecznym miejscu i spójrz na mapę.'] },
+
+  { nazwa: 'Godziny szczytu', trudnosc: 4, ruch: 26, piesi: 20,
+    opis: 'Ulice są zatłoczone. Utrzymaj odstęp, nie blokuj skrzyżowań i zachowaj spokój.',
+    start: { i: 2, j: 0, d: 1 }, cel: { i: 4, j: 6 },
+    wskazowki: ['Nie wjeżdżaj na skrzyżowanie, jeśli nie masz pewności, że zdołasz je opuścić.',
+      'Bezpieczny odstęp w mieście to około 2 sekundy do poprzedzającego pojazdu.',
+      'W korku hamuj wcześnie i łagodnie — gwałtowne hamowanie wywołuje kolizje z tyłu.'] },
+
+  { nazwa: 'Jazda nocą', trudnosc: 4, ruch: 16, piesi: 14, noc: true,
+    opis: 'Nocą widzisz tylko tyle, ile oświetlą reflektory. Zmniejsz prędkość i uważaj na pieszych.',
+    start: { i: 6, j: 4, d: 2 }, cel: { i: 1, j: 1 },
+    wskazowki: ['Prędkość dobieraj tak, byś mógł zatrzymać się w zasięgu świateł.',
+      'Pieszy w ciemnym ubraniu jest widoczny z kilkunastu metrów — poza terenem zabudowanym musi nosić odblaski.',
+      'Nie patrz w reflektory nadjeżdżających aut; kieruj wzrok na prawą krawędź jezdni.'] },
+
+  { nazwa: 'Trasa egzaminacyjna', trudnosc: 4, ruch: 20, piesi: 16,
+    opis: 'Pełna trasa sprawdzająca wszystkie umiejętności: pierwszeństwo, światła, prędkość i piesi.',
+    start: { i: 6, j: 6, d: 2 }, cel: { i: 0, j: 1 },
+    wskazowki: ['Egzaminator ocenia płynność jazdy tak samo jak znajomość przepisów.',
+      'Jazda zbyt wolna bez powodu też jest błędem — utrudniasz ruch.',
+      'Obserwuj znaki w oddali, nie tuż przed maską.'] },
+
+  { nazwa: 'Precyzyjne parkowanie', trudnosc: 4, ruch: 14, piesi: 12, typ: 'parking', parking: 1,
+    opis: 'Przejedź przez centrum i zaparkuj w wyznaczonym miejscu przy ulicy Targowej.',
+    start: { i: 2, j: 2, d: 0 },
+    wskazowki: ['Do miejsca podjeżdżaj powoli, oceniając odległość do linii.',
+      'Przy manewrowaniu używaj krótkich impulsów gazu i hamulca.',
+      'Zaparkowany pojazd nie może wystawać poza linie ani blokować przejścia.'] },
+
+  { nazwa: 'Egzamin państwowy', trudnosc: 4, ruch: 24, piesi: 18, bezPodpowiedzi: true, prog: 80,
+    opis: 'Brak podpowiedzi, pełny ruch, wymagane 80 punktów. Egzaminator nie powie Ci, co masz zrobić — musisz wiedzieć sam.',
+    start: { i: 0, j: 6, d: 0 }, cel: { i: 6, j: 0 },
+    wskazowki: ['Instruktor milczy. Wszystkie decyzje podejmujesz na podstawie znaków i sytuacji.',
+      'Jeden błąd krytyczny — czerwone światło, brak zatrzymania na STOP, potrącenie — kończy egzamin negatywnie.',
+      'Powodzenia. Jedź spokojnie i przewidująco.'] }
+];
+
+/* ---------- trasa (BFS po siatce) ---------- */
+function wyznaczTrase(od, doC) {
+  const kol = [[od.i, od.j]], skad = {}; skad[od.i + '_' + od.j] = null;
+  while (kol.length) {
+    const [i, j] = kol.shift();
+    if (i === doC.i && j === doC.j) break;
+    for (let d = 0; d < 4; d++) {
+      const ni = i + DIRV[d][0], nj = j + DIRV[d][1];
+      if (ni < 0 || nj < 0 || ni >= NG || nj >= NG) continue;
+      if (ni === JEDNOKIER_PION && i === JEDNOKIER_PION && d === 1) continue; // pod prąd
+      const k = ni + '_' + nj;
+      if (k in skad) continue;
+      skad[k] = [i, j]; kol.push([ni, nj]);
+    }
+  }
+  const sciezka = []; let k = doC.i + '_' + doC.j;
+  if (!(k in skad)) return [];
+  let cur = [doC.i, doC.j];
+  while (cur) { sciezka.unshift(cur); const p = skad[cur[0] + '_' + cur[1]]; cur = p; }
+  return sciezka;
+}
+
+function rysujTrase() {
+  while (swiat.grupaTrasa.children.length) swiat.grupaTrasa.remove(swiat.grupaTrasa.children[0]);
+  const t = stanGry.trasa;
+  const mat = new THREE.MeshBasicMaterial({ color: 0x2FBF5C, transparent: true, opacity: 0.42 });
+  for (let n = 0; n < t.length - 1; n++) {
+    const [i1, j1] = t[n], [i2, j2] = t[n + 1];
+    const x1 = P(i1), z1 = P(j1), x2 = P(i2), z2 = P(j2);
+    const poziomo = j1 === j2;
+    const dlg = Math.hypot(x2 - x1, z2 - z1);
+    const seg = new THREE.Mesh(
+      poziomo ? new THREE.PlaneGeometry(dlg, 1.6) : new THREE.PlaneGeometry(1.6, dlg), mat);
+    seg.rotation.x = -Math.PI / 2;
+    seg.position.set((x1 + x2) / 2 + (poziomo ? 0 : (z2 > z1 ? -PAS : PAS)), 0.06,
+                     (z1 + z2) / 2 + (poziomo ? (x2 > x1 ? PAS : -PAS) : 0));
+    swiat.grupaTrasa.add(seg);
+  }
+  /* znacznik celu */
+  const c = stanGry.punktCelu;
+  if (c) {
+    const ring = new THREE.Mesh(new THREE.RingGeometry(4.6, 6.4, 28),
+      new THREE.MeshBasicMaterial({ color: 0x2FBF5C, side: THREE.DoubleSide, transparent: true, opacity: .75 }));
+    ring.rotation.x = -Math.PI / 2; ring.position.set(c.x, 0.12, c.z);
+    swiat.grupaTrasa.add(ring); swiat.pierscien = ring;
+    const slup = new THREE.Mesh(new THREE.CylinderGeometry(1.5, 1.5, 26, 12),
+      new THREE.MeshBasicMaterial({ color: 0x2FBF5C, transparent: true, opacity: .16 }));
+    slup.position.set(c.x, 13, c.z); swiat.grupaTrasa.add(slup);
+  }
+}
+
+/* ---------- start misji ---------- */
+function startMisji(nr) {
+  const m = MISJE[nr];
+  stanGry.misja = m; stanGry.nrMisji = nr;
+  stanGry.punkty = 100; stanGry.bledy = []; stanGry.krytyczne = 0;
+  stanGry.start = performance.now(); stanGry.aktywna = true;
+  stanGry.dystansPrzejechany = 0;
+  for (const k in ostatnieZgloszenie) delete ostatnieZgloszenie[k];
+  sedzia.podejscie = null; sedzia.wSkrzyzowaniu = false; ostatniaZapowiedz = '';
+
+  const poz = punktPasa(m.start.i, m.start.j, m.start.d, 26);
+  auto.x = poz.x; auto.z = poz.z; auto.kier = dirKat(m.start.d);
+  auto.v = 0; auto.skret = 0; auto.bieg = 'P';
+
+  stworzRuch(m.ruch); stworzPieszych(m.piesi);
+  ustawPore(!!m.noc);
+  if (auto.mesh.userData.reflektor) auto.mesh.userData.reflektor.intensity = m.noc ? 2.6 : 0;
+
+  if (m.typ === 'parking') {
+    const pk = swiat.parkingi.filter(p => p.misyjny)[m.parking] || swiat.parkingi[0];
+    stanGry.parking = pk;
+    stanGry.punktCelu = { x: pk.x, z: pk.z };
+    stanGry.trasa = wyznaczTrase({ i: m.start.i, j: m.start.j }, { i: pk.i, j: pk.j });
+  } else {
+    stanGry.parking = null;
+    stanGry.punktCelu = { x: P(m.cel.i), z: P(m.cel.j) };
+    stanGry.trasa = wyznaczTrase({ i: m.start.i, j: m.start.j }, m.cel);
+  }
+  rysujTrase();
+
+  document.getElementById('misjaNr').textContent = 'Lekcja ' + (nr + 1) + ' z ' + MISJE.length;
+  document.getElementById('misjaTytul').textContent = m.nazwa;
+  document.getElementById('misjaOpis').textContent = m.opis;
+  const ul = document.getElementById('wskazowki'); ul.innerHTML = '';
+  m.wskazowki.forEach(w => { const li = document.createElement('li'); li.textContent = w; ul.appendChild(li); });
+
+  document.getElementById('menu').classList.add('ukryty');
+  document.getElementById('podsumowanie').classList.add('ukryty');
+  document.getElementById('hud').classList.add('wid');
+  odswiezPunkty();
+  aktualizujKamere(0, true);
+  setTimeout(() => podpowiedz('Lekcja ' + (nr + 1) + ': ' + m.nazwa, m.opis), 400);
+}
+
+/* ---------- warunek ukończenia ---------- */
+function sprawdzCel(kmh) {
+  if (!stanGry.aktywna) return;
+  const m = stanGry.misja;
+  if (m.typ === 'parking') {
+    const pk = stanGry.parking;
+    const wMiejscu = Math.abs(auto.x - pk.x) < pk.szer / 2 - 0.4 && Math.abs(auto.z - pk.z) < pk.dl / 2 - 0.6;
+    const roznicaKata = Math.abs(kat(auto.kier - pk.kat));
+    const rownolegle = roznicaKata < 0.35 || Math.abs(roznicaKata - Math.PI) < 0.35;
+    if (wMiejscu && rownolegle && Math.abs(auto.v) < 0.4) {
+      stanGry.postojCzas = (stanGry.postojCzas || 0) + 1;
+      if (stanGry.postojCzas > 40) zakonczMisje(true);
+    } else stanGry.postojCzas = 0;
+  } else {
+    const c = stanGry.punktCelu;
+    if (Math.hypot(auto.x - c.x, auto.z - c.z) < 11 && Math.abs(auto.v) < 1.4) zakonczMisje(true);
+  }
+}
+
+function zakonczMisje(sukces) {
+  if (!stanGry.aktywna) return;
+  stanGry.aktywna = false;
+  stanGry.czas = (performance.now() - stanGry.start) / 1000;
+  const m = stanGry.misja;
+  const prog = m.prog || 60;
+  const zdane = sukces && stanGry.punkty >= prog && stanGry.krytyczne === 0;
+  const zapis = stanGry.wyniki[stanGry.nrMisji];
+  if (!zapis || zapis < stanGry.punkty) stanGry.wyniki[stanGry.nrMisji] = stanGry.punkty;
+
+  document.getElementById('podsTytul').textContent = zdane ? 'Lekcja zaliczona' : 'Lekcja niezaliczona';
+  document.getElementById('podsPodtytul').textContent =
+    m.nazwa + ' — przejazd trwał ' + Math.round(stanGry.czas) + ' s. Wymagane minimum: ' + prog + ' pkt i zero błędów krytycznych.';
+  document.getElementById('ocenaWynik').textContent = stanGry.punkty;
+  document.getElementById('ocenaKolo').className = zdane ? '' : 'zle';
+
+  let nag, kom;
+  if (zdane && stanGry.bledy.length === 0) { nag = 'Przejazd wzorowy'; kom = 'Ani jednej uwagi. Tak wygląda jazda, której oczekuje egzaminator: płynnie, przewidująco i zgodnie ze znakami.'; }
+  else if (zdane) { nag = 'Zaliczone z uwagami'; kom = 'Cel osiągnięty, ale instruktor zanotował kilka rzeczy do poprawy. Przeczytaj je uważnie — na egzaminie część z nich kosztowałaby wynik negatywny.'; }
+  else if (stanGry.krytyczne > 0) { nag = 'Błąd krytyczny'; kom = 'Popełniłeś błąd, który na egzaminie państwowym oznacza natychmiastowe przerwanie jazdy. Przeanalizuj sytuację poniżej i spróbuj jeszcze raz.'; }
+  else { nag = 'Za dużo błędów'; kom = 'Zabrakło punktów. Wróć na trasę i skup się na tym, co instruktor wypisał niżej.'; }
+  document.getElementById('ocenaNaglowek').textContent = nag;
+  document.getElementById('ocenaKomentarz').textContent = kom;
+
+  const st = document.getElementById('statystyki');
+  st.innerHTML = '';
+  [['Czas', Math.round(stanGry.czas) + ' s'],
+   ['Błędy', String(stanGry.bledy.reduce((s, b) => s + b.ile, 0))],
+   ['Krytyczne', String(stanGry.krytyczne)],
+   ['Cel', sukces ? 'osiągnięty' : 'nieosiągnięty']].forEach(([e, w]) => {
+    const d = document.createElement('div'); d.className = 'stat';
+    d.innerHTML = '<div class="w"></div><div class="e"></div>';
+    d.querySelector('.w').textContent = w; d.querySelector('.e').textContent = e;
+    st.appendChild(d);
+  });
+
+  const lb = document.getElementById('listaBledow'); lb.innerHTML = '';
+  stanGry.bledy.sort((a, b) => b.kara * b.ile - a.kara * a.ile).forEach(b => {
+    const li = document.createElement('li');
+    li.innerHTML = '<div class="bTyt"><span></span><span class="bIle"></span></div><div class="bOpis"></div>';
+    li.querySelector('.bTyt span').textContent = b.tytul + (b.ile > 1 ? ' ×' + b.ile : '');
+    li.querySelector('.bIle').textContent = '−' + (b.kara * b.ile) + ' pkt' + (b.krytyczne ? ' · krytyczny' : '');
+    li.querySelector('.bOpis').textContent = b.wyjasnienie;
+    lb.appendChild(li);
+  });
+  document.getElementById('bezBledow').style.display = stanGry.bledy.length ? 'none' : 'block';
+  document.getElementById('btnDalej').style.display =
+    (zdane && stanGry.nrMisji < MISJE.length - 1) ? 'block' : 'none';
+  document.getElementById('podsumowanie').classList.remove('ukryty');
+  document.getElementById('hud').classList.remove('wid');
+}
+
+/* ============================================================
+   INTERFEJS
+   ============================================================ */
+function odswiezPunkty() {
+  const el = document.getElementById('punktyVal');
+  el.textContent = stanGry.punkty;
+  const kaf = document.getElementById('punktyKafel');
+  kaf.className = 'kafel panel' + (stanGry.punkty < 50 ? ' zle' : stanGry.punkty < 80 ? ' ostrzezenie' : '');
+}
+
+const ctxPred = document.getElementById('predkosciomierz').getContext('2d');
+function rysujPredkosciomierz(kmh, limit) {
+  const g = ctxPred, S = 264, c = S / 2;
+  g.clearRect(0, 0, S, S);
+  const a0 = Math.PI * 0.78, a1 = Math.PI * 2.22;
+  g.lineWidth = 13; g.strokeStyle = '#23282F'; g.lineCap = 'round';
+  g.beginPath(); g.arc(c, c, 104, a0, a1); g.stroke();
+  const v = kl(Math.abs(kmh) / 160, 0, 1);
+  const przekr = kmh > limit + 6;
+  g.strokeStyle = przekr ? '#D8232A' : (kmh > limit ? '#F7C948' : '#2FBF5C');
+  g.beginPath(); g.arc(c, c, 104, a0, a0 + (a1 - a0) * v); g.stroke();
+  /* znacznik limitu */
+  const al = a0 + (a1 - a0) * kl(limit / 160, 0, 1);
+  g.strokeStyle = '#F7C948'; g.lineWidth = 4;
+  g.beginPath(); g.moveTo(c + Math.cos(al) * 90, c + Math.sin(al) * 90);
+  g.lineTo(c + Math.cos(al) * 117, c + Math.sin(al) * 117); g.stroke();
+  /* podziałka */
+  g.strokeStyle = '#4A525C'; g.lineWidth = 2;
+  for (let k = 0; k <= 160; k += 20) {
+    const a = a0 + (a1 - a0) * (k / 160);
+    g.beginPath(); g.moveTo(c + Math.cos(a) * 86, c + Math.sin(a) * 86);
+    g.lineTo(c + Math.cos(a) * 95, c + Math.sin(a) * 95); g.stroke();
+  }
+}
+
+const ctxMapa = document.getElementById('mapa').getContext('2d');
+function rysujMape() {
+  const g = ctxMapa, S = 492, mar = 16;
+  const sk = (S - mar * 2) / (KRANIEC * 2);
+  const px = x => mar + (x + KRANIEC) * sk, pz = z => mar + (z + KRANIEC) * sk;
+  g.fillStyle = '#0A0C0E'; g.fillRect(0, 0, S, S);
+  /* kwartały */
+  g.fillStyle = '#14181D';
+  for (let i = 0; i < NG - 1; i++)
+    for (let j = 0; j < NG - 1; j++)
+      g.fillRect(px(P(i) + POL_HALF), pz(P(j) + POL_HALF), (SP - POL_HALF * 2) * sk, (SP - POL_HALF * 2) * sk);
+  /* ulice */
+  g.strokeStyle = '#333A43'; g.lineWidth = POL_HALF * 2 * sk;
+  for (let i = 0; i < NG; i++) {
+    g.beginPath(); g.moveTo(px(-KRANIEC), pz(P(i))); g.lineTo(px(KRANIEC), pz(P(i))); g.stroke();
+    g.beginPath(); g.moveTo(px(P(i)), pz(-KRANIEC)); g.lineTo(px(P(i)), pz(KRANIEC)); g.stroke();
+  }
+  /* ulice główne */
+  g.strokeStyle = '#4A525C';
+  PRIORYTET_POZ.forEach(j => { g.beginPath(); g.moveTo(px(-KRANIEC), pz(P(j))); g.lineTo(px(KRANIEC), pz(P(j))); g.stroke(); });
+  PRIORYTET_PION.forEach(i => { g.beginPath(); g.moveTo(px(P(i)), pz(-KRANIEC)); g.lineTo(px(P(i)), pz(KRANIEC)); g.stroke(); });
+  /* jednokierunkowa */
+  g.strokeStyle = '#6B4A2A'; g.lineWidth = POL_HALF * sk;
+  g.beginPath(); g.moveTo(px(P(JEDNOKIER_PION)), pz(-KRANIEC)); g.lineTo(px(P(JEDNOKIER_PION)), pz(KRANIEC)); g.stroke();
+  /* trasa */
+  const t = stanGry.trasa;
+  if (t && t.length > 1) {
+    g.strokeStyle = '#2FBF5C'; g.lineWidth = 5; g.setLineDash([10, 7]); g.lineJoin = 'round';
+    g.beginPath(); g.moveTo(px(P(t[0][0])), pz(P(t[0][1])));
+    for (let n = 1; n < t.length; n++) g.lineTo(px(P(t[n][0])), pz(P(t[n][1])));
+    g.stroke(); g.setLineDash([]);
+  }
+  /* sygnalizacja */
+  for (const k in swiat.skrzyzowania) {
+    const s = swiat.skrzyzowania[k]; if (!s.swiatla) continue;
+    g.fillStyle = s.stanNS === 'zielone' ? 'rgba(47,191,92,.55)' : 'rgba(216,35,42,.45)';
+    g.beginPath(); g.arc(px(s.x), pz(s.z), 4.5, 0, 7); g.fill();
+  }
+  /* ruch i piesi */
+  g.fillStyle = '#5B6673';
+  ruch.forEach(a => { g.beginPath(); g.arc(px(a.x), pz(a.z), 3.6, 0, 7); g.fill(); });
+  g.fillStyle = '#2563C9';
+  piesi.forEach(p => { g.beginPath(); g.arc(px(p.x), pz(p.z), 2.6, 0, 7); g.fill(); });
+  /* cel */
+  const c = stanGry.punktCelu;
+  if (c) {
+    g.strokeStyle = '#2FBF5C'; g.lineWidth = 3;
+    g.beginPath(); g.arc(px(c.x), pz(c.z), 9 + Math.sin(performance.now() / 300) * 2.5, 0, 7); g.stroke();
+    g.fillStyle = '#2FBF5C'; g.beginPath(); g.arc(px(c.x), pz(c.z), 4, 0, 7); g.fill();
+  }
+  /* gracz */
+  g.save(); g.translate(px(auto.x), pz(auto.z)); g.rotate(auto.kier + Math.PI / 2);
+  g.fillStyle = '#F7C948'; g.beginPath();
+  g.moveTo(0, -9); g.lineTo(6.5, 8); g.lineTo(0, 4.5); g.lineTo(-6.5, 8); g.closePath(); g.fill();
+  g.restore();
+}
+
+const ctxZnak = document.getElementById('znakObraz').getContext('2d');
+let znakWidoczny = null;
+function aktualizujPanelZnaku() {
+  let najlepszy = null, najDyst = 44;
+  for (const z of swiat.znaki) {
+    const dx = z.x - auto.x, dz = z.z - auto.z;
+    const d = Math.hypot(dx, dz);
+    if (d > najDyst) continue;
+    const przod = dx * Math.cos(auto.kier) + dz * Math.sin(auto.kier);
+    if (przod < 2) continue;
+    const odchyl = Math.abs(kat(Math.atan2(dz, dx) - auto.kier));
+    if (odchyl > 0.42) continue;
+    const nx = Math.sin(z.rot), nz = Math.cos(z.rot);
+    if (nx * -dx + nz * -dz < 0) continue;             // znak odwrócony tyłem
+    najDyst = d; najlepszy = z;
+  }
+  const panel = document.getElementById('znakPanel');
+  if (!najlepszy) { panel.classList.remove('wid'); znakWidoczny = null; return; }
+  const klucz = najlepszy.id + (najlepszy.param || '');
+  panel.classList.add('wid');
+  if (klucz === znakWidoczny) return;
+  znakWidoczny = klucz;
+  const o = opisZnaku(najlepszy.id, najlepszy.param);
+  document.getElementById('znakKod').textContent = o.kod;
+  document.getElementById('znakNazwa').textContent = o.nazwa;
+  document.getElementById('znakOpis').textContent = o.opis;
+  ctxZnak.clearRect(0, 0, 148, 148);
+  ctxZnak.drawImage(canvasZnaku(najlepszy.id, najlepszy.param), 0, 0, 148, 148);
+}
+
+function aktualizujPanelSwiatla() {
+  const inf = infoJezdni(auto.x, auto.z);
+  const sk = swiat.skrzyzowania[inf.i + '_' + inf.j];
+  const panel = document.getElementById('swiatloPanel');
+  const d = kierunekZKata(auto.kier);
+  const dyst = Math.hypot(auto.x - sk.x, auto.z - sk.z);
+  if (!sk.swiatla || dyst > 46) { panel.classList.remove('wid'); return; }
+  panel.classList.add('wid');
+  const st = stanSwiatla(sk, d);
+  document.getElementById('lampR').className = 'lampka' + (st === 'czerwone' ? ' on-r' : '');
+  document.getElementById('lampY').className = 'lampka' + (st === 'zolte' ? ' on-y' : '');
+  document.getElementById('lampG').className = 'lampka' + (st === 'zielone' ? ' on-g' : '');
+}
+
+function aktualizujCel() {
+  const c = stanGry.punktCelu; if (!c) return;
+  const dyst = Math.hypot(auto.x - c.x, auto.z - c.z);
+  document.getElementById('dystans').textContent = Math.round(dyst) + ' m';
+  const wzgl = kat(Math.atan2(c.z - auto.z, c.x - auto.x) - auto.kier);
+  document.getElementById('strzalkaCel').style.transform = 'rotate(' + (wzgl * 180 / Math.PI + 0) + 'deg)';
+}
+
+/* ---------- powrót na jezdnię (klawisz R) ---------- */
+addEventListener('keydown', e => {
+  if (e.code === 'Escape' && stanGry.aktywna) { zakonczMisje(false); }
+  if (e.key === 'r' || e.key === 'R') {
+    const inf = infoJezdni(auto.x, auto.z);
+    const d = kierunekZKata(auto.kier);
+    const p = punktPasa(inf.i, inf.j, d, 14);
+    auto.x = p.x; auto.z = p.z; auto.kier = dirKat(d); auto.v = 0;
+    podpowiedz('Ustawiono na pasie ruchu', 'Auto wróciło na prawy pas najbliższej ulicy, zgodnie z kierunkiem jazdy.');
+  }
+});
+
+/* ============================================================
+   PĘTLA GŁÓWNA
+   ============================================================ */
+let poprzedniCzas = performance.now();
+function petla() {
+  requestAnimationFrame(petla);
+  const teraz = performance.now();
+  let dt = (teraz - poprzedniCzas) / 1000;
+  poprzedniCzas = teraz;
+  dt = Math.min(dt, 0.05);
+
+  const kmh = fizykaAuta(dt);
+  aktualizujSwiatla(dt);
+  aktualizujRuch(dt);
+  aktualizujPieszych(dt);
+  aktualizujKamere(dt);
+  if (stanGry.aktywna) ocenJazde(dt, Math.abs(kmh));
+
+  if (swiat.pierscien) swiat.pierscien.rotation.z += dt * 0.7;
+
+  document.getElementById('predkoscVal').textContent = Math.round(Math.abs(kmh));
+  document.getElementById('biegVal').textContent = auto.bieg;
+  document.getElementById('limitZnak').textContent = stanGry.limit || 50;
+  rysujPredkosciomierz(Math.abs(kmh), stanGry.limit || 50);
+  rysujMape();
+  aktualizujPanelZnaku();
+  aktualizujPanelSwiatla();
+  aktualizujCel();
+
+  render.render(scena, kamera);
+}
+/* ============================================================
+   Część 5: menu, materiały do nauki, uruchomienie
+   ============================================================ */
+
+const NAZWY_TRUDNOSCI = { 1: 'podstawy', 2: 'łatwa', 3: 'średnia', 4: 'trudna' };
+
+function budujListeMisji() {
+  const box = document.getElementById('listaMisji');
+  box.innerHTML = '';
+  MISJE.forEach((m, nr) => {
+    const b = document.createElement('button');
+    b.className = 'misja';
+    const wynik = stanGry.wyniki[nr];
+    b.innerHTML =
+      '<div class="gora"><span class="nr"></span><span class="wynik"></span></div>' +
+      '<div class="tyt"></div><div class="op"></div><div class="stopka"></div>';
+    b.querySelector('.nr').textContent = 'Lekcja ' + (nr + 1);
+    b.querySelector('.wynik').textContent = wynik !== undefined ? wynik + ' pkt' : '';
+    b.querySelector('.tyt').textContent = m.nazwa;
+    b.querySelector('.op').textContent = m.opis;
+    const st = b.querySelector('.stopka');
+    const p1 = document.createElement('span');
+    p1.className = 'plakietka trudnosc' + m.trudnosc;
+    p1.textContent = NAZWY_TRUDNOSCI[m.trudnosc];
+    st.appendChild(p1);
+    const p2 = document.createElement('span');
+    p2.className = 'plakietka';
+    p2.textContent = m.ruch + ' aut w ruchu';
+    st.appendChild(p2);
+    if (m.noc) { const p3 = document.createElement('span'); p3.className = 'plakietka'; p3.textContent = 'noc'; st.appendChild(p3); }
+    if (m.typ === 'parking') { const p4 = document.createElement('span'); p4.className = 'plakietka'; p4.textContent = 'manewr'; st.appendChild(p4); }
+    if (m.bezPodpowiedzi) { const p5 = document.createElement('span'); p5.className = 'plakietka trudnosc4'; p5.textContent = 'bez podpowiedzi'; st.appendChild(p5); }
+    b.onclick = () => startMisji(nr);
+    box.appendChild(b);
+  });
+}
+
+function budujKatalogZnakow() {
+  const box = document.getElementById('katalogZnakow');
+  box.innerHTML = '';
+  GRUPY_ZNAKOW.forEach(gr => {
+    const sekcja = document.createElement('section');
+    sekcja.className = 'grupaZnakow';
+    const h = document.createElement('h3'); h.textContent = gr.tytul;
+    const w = document.createElement('p'); w.className = 'wstep'; w.textContent = gr.wstep;
+    const siatka = document.createElement('div'); siatka.className = 'siatkaZnakow';
+    Object.keys(ZNAKI).filter(id => ZNAKI[id].kat === gr.kat).forEach(id => {
+      const z = ZNAKI[id];
+      const karta = document.createElement('div'); karta.className = 'znakKarta';
+      const c = document.createElement('canvas'); c.width = c.height = 112;
+      c.getContext('2d').drawImage(canvasZnaku(id, z.param === 'limit' ? 50 : null), 0, 0, 112, 112);
+      const tresc = document.createElement('div');
+      tresc.innerHTML = '<div class="kod"></div><div class="nz"></div><div class="op"></div>';
+      tresc.querySelector('.kod').textContent = z.kod;
+      tresc.querySelector('.nz').textContent = z.nazwa;
+      tresc.querySelector('.op').textContent = z.opis;
+      karta.appendChild(c); karta.appendChild(tresc);
+      siatka.appendChild(karta);
+    });
+    sekcja.appendChild(h); sekcja.appendChild(w); sekcja.appendChild(siatka);
+    box.appendChild(sekcja);
+  });
+}
+
+const PRZEPISY = [
+  ['Kto jedzie pierwszy — kolejność czytania skrzyżowania',
+   'Zawsze w tej samej kolejności: najpierw polecenia osoby kierującej ruchem, potem sygnalizacja świetlna, następnie znaki pierwszeństwa (A-7, B-20, D-1), a dopiero na końcu zasada prawej ręki. Jeśli na skrzyżowaniu działa sygnalizacja, znaki pierwszeństwa milczą — wracają do gry dopiero po jej wyłączeniu.'],
+  ['Zasada prawej ręki',
+   'Na skrzyżowaniu równorzędnym — bez znaków i świateł — ustępujesz pojazdowi nadjeżdżającemu z prawej strony. Skręcając w lewo, ustępujesz też pojazdom jadącym z naprzeciwka na wprost i w prawo.'],
+  ['Czym naprawdę jest „ustąpienie pierwszeństwa”',
+   'To nie uprzejmość, tylko definicja z ustawy: nie wolno zmusić innego kierującego do zmiany kierunku lub prędkości. Jeśli ktoś przez Ciebie musiał zahamować, pierwszeństwa nie ustąpiłeś — nawet jeśli udało się uniknąć kolizji.'],
+  ['STOP to zawsze pełne zatrzymanie',
+   'Znak B-20 wymaga, by koła stanęły. Zwolnienie do 5 km/h i rozejrzenie się jest wykroczeniem, choć wygląda podobnie. Zatrzymujesz się przed linią bezwzględnego zatrzymania, a gdy jej nie ma — w miejscu, z którego widzisz drogę poprzeczną.'],
+  ['Pieszy na przejściu',
+   'Kierujący ma obowiązek ustąpić pierwszeństwa pieszemu znajdującemu się na przejściu oraz wchodzącemu na nie. Pieszy nie może jednak wtargnąć pod nadjeżdżający pojazd ani korzystać z telefonu podczas przechodzenia. Przed przejściem i na nim obowiązuje zakaz wyprzedzania.'],
+  ['Dopuszczalne prędkości',
+   'Obszar zabudowany: 50 km/h przez całą dobę. Strefa zamieszkania: 20 km/h i bezwzględne pierwszeństwo pieszego na całej szerokości drogi. Poza obszarem zabudowanym samochód osobowy: zwykle 90 km/h, droga ekspresowa dwujezdniowa 120 km/h, autostrada 140 km/h.'],
+  ['Światła i to nieszczęsne żółte',
+   'Zielone zezwala na wjazd, ale nie zwalnia z ustąpienia pieszym i pojazdom opuszczającym skrzyżowanie. Żółte zabrania wjazdu za linię — chyba że w chwili jego zapalenia byłeś tak blisko, że nie dało się bezpiecznie zatrzymać. Czerwone z żółtym oznacza „za chwilę ruszamy”, ale jeszcze nie wolno jechać.'],
+  ['Odstęp i droga hamowania',
+   'Droga hamowania rośnie z kwadratem prędkości: przy 50 km/h to około 25 metrów razem z czasem reakcji, przy 100 km/h już ponad 80. Prosty sposób na odstęp w mieście: licz dwie sekundy od chwili, gdy poprzedzający pojazd minie jakiś punkt.'],
+  ['Ograniczone zaufanie',
+   'Masz prawo zakładać, że inni przestrzegają przepisów — poza sytuacjami, gdy okoliczności wskazują inaczej. Dziecko przy krawężniku, osoba starsza, rowerzysta jadący chwiejnie, auto z zapalonym kierunkowskazem: wtedy zaufanie znika i trzeba być gotowym na ich błąd.'],
+  ['Manewry, o których najczęściej się zapomina',
+   'Zmieniając pas, ustępujesz pierwszeństwa pojazdom na tym pasie. Włączając się do ruchu (wyjazd z parkingu, drogi gruntowej, strefy zamieszkania), ustępujesz wszystkim. Cofanie jest dozwolone tylko wtedy, gdy nie utrudnia ruchu i jest bezpieczne — nigdy na skrzyżowaniu ani autostradzie.']
+];
+function budujPrzepisy() {
+  const box = document.getElementById('przepisyTresc');
+  box.innerHTML = '';
+  PRZEPISY.forEach(([t, o]) => {
+    const d = document.createElement('div'); d.className = 'przepis';
+    const h = document.createElement('h4'); h.textContent = t;
+    const p = document.createElement('p'); p.textContent = o;
+    d.appendChild(h); d.appendChild(p); box.appendChild(d);
+  });
+}
+
+/* zakładki */
+document.querySelectorAll('.zakladka').forEach(z => {
+  z.onclick = () => {
+    document.querySelectorAll('.zakladka').forEach(x => x.classList.remove('akt'));
+    document.querySelectorAll('.karta').forEach(x => x.classList.remove('akt'));
+    z.classList.add('akt');
+    document.getElementById(z.dataset.karta).classList.add('akt');
+  };
+});
+
+/* przyciski podsumowania */
+document.getElementById('btnDalej').onclick = () => startMisji(Math.min(MISJE.length - 1, stanGry.nrMisji + 1));
+document.getElementById('btnPowtorz').onclick = () => startMisji(stanGry.nrMisji);
+document.getElementById('btnMenu').onclick = () => {
+  document.getElementById('podsumowanie').classList.add('ukryty');
+  budujListeMisji();
+  document.getElementById('menu').classList.remove('ukryty');
+};
+
+/* ============================================================
+   URUCHOMIENIE
+   ============================================================ */
+function krokLadowania(proc, tekst) {
+  document.getElementById('pasekLadWyp').style.width = proc + '%';
+  document.getElementById('ladTekst').textContent = tekst;
+}
+
+function uruchom() {
+  const kroki = [
+    [12, 'wytyczanie ulic…', () => inicjujScene()],
+    [38, 'stawianie budynków i chodników…', () => budujMiasto()],
+    [64, 'montaż znaków drogowych…', () => { budujKatalogZnakow(); }],
+    [80, 'uruchamianie sygnalizacji…', () => { auto.mesh = zbudujAuto(0xF2F3F5, true); stworzRuch(6); stworzPieszych(8); }],
+    [94, 'zapraszanie mieszkańców…', () => { budujListeMisji(); budujPrzepisy(); }],
+    [100, 'gotowe', () => {
+      document.getElementById('ladowanie').style.display = 'none';
+      document.getElementById('menu').classList.remove('ukryty');
+      auto.x = P(1); auto.z = P(2) + PAS; auto.kier = 0;
+      aktualizujKamere(0, true);
+      petla();
+    }]
+  ];
+  let n = 0;
+  (function dalej() {
+    if (n >= kroki.length) return;
+    const [proc, txt, fn] = kroki[n++];
+    krokLadowania(proc, txt);
+    setTimeout(() => { fn(); dalej(); }, 40);
+  })();
+}
+
+if (typeof THREE === 'undefined') {
+  document.getElementById('ladTekst').textContent =
+    'Nie udało się pobrać biblioteki 3D. Sprawdź połączenie z internetem i odśwież stronę.';
+} else {
+  uruchom();
+}
+
+</script>
+</body>
+</html>
