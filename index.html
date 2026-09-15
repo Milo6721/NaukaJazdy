@@ -104,8 +104,10 @@ button{font-family:inherit;cursor:pointer;border:none;background:none;color:inhe
 #znakOpis{font-size:12.5px;line-height:1.45;color:var(--beton-cichy)}
 
 /* komunikaty sędziego */
-#komunikaty{position:absolute;top:120px;left:50%;transform:translateX(-50%);width:440px;
-  display:flex;flex-direction:column;gap:8px;align-items:center}
+/* powiadomienia stoją pod minimapą, z dala od środka jezdni — nie zasłaniają drogi;
+   pokazujemy zawsze tylko jedno, najnowsze */
+#komunikaty{position:absolute;top:280px;right:16px;width:246px;
+  display:flex;flex-direction:column;gap:8px;align-items:stretch}
 .toast{width:100%;border-radius:9px;padding:11px 14px;border-left:5px solid;
   background:rgba(21,24,28,.96);border-top:1px solid var(--linia);border-right:1px solid var(--linia);
   border-bottom:1px solid var(--linia);animation:wjazd .22s ease-out}
@@ -230,9 +232,19 @@ kbd{display:inline-block;min-width:20px;text-align:center;padding:1px 5px;border
 #pasekLadWyp{height:100%;width:15%;background:var(--zolty);transition:width .3s}
 #ladTekst{font-size:12.5px;color:var(--beton-cichy)}
 
+/* ── kontrola drogowa (policja) ───────────────── */
+.syrenka{display:inline-block;width:13px;height:13px;border-radius:50%;margin-right:9px;
+  vertical-align:middle;animation:syrena .55s infinite alternate}
+@keyframes syrena{
+  from{background:var(--czerwony);box-shadow:0 0 11px var(--czerwony)}
+  to{background:var(--niebieski);box-shadow:0 0 11px var(--niebieski)}
+}
+#policjaOkno{max-width:520px}
+
 @media (max-width:900px){
   #misja{width:242px}
   #mapaPanel{width:184px}#mapa{height:184px}
+  #komunikaty{top:224px;width:184px}
   #sterowanie{display:none}
   #znakPanel{width:300px}
 }
@@ -364,6 +376,21 @@ kbd{display:inline-block;min-width:20px;text-align:center;padding:1px 5px;border
   </div>
 </div>
 
+<!-- ══ KONTROLA DROGOWA ══ -->
+<div class="ekran ukryty" id="policja">
+  <div class="okno" id="policjaOkno">
+    <div class="oknoNag">
+      <h1><i class="syrenka"></i>Kontrola drogowa</h1>
+      <p id="policjaOpis">Doszło do zdarzenia drogowego.</p>
+    </div>
+    <div class="pasy"></div>
+    <div class="przyciski">
+      <button class="btn glowny" id="btnPolicjaTak">Tak, to moja wina</button>
+      <button class="btn" id="btnPolicjaNie">Nie, to nie moja wina</button>
+    </div>
+  </div>
+</div>
+
 <!-- ══ ŁADOWANIE ══ -->
 <div id="ladowanie">
   <h2>Budowanie miasta</h2>
@@ -393,10 +420,11 @@ const NAZWY_POZ  = ['Północna', 'Akacjowa', 'Piastowska', 'Wolności', 'Targow
 
 /* ulice z pierwszeństwem (droga z pierwszeństwem D-1) */
 const PRIORYTET_POZ = [3];       // Wolności
-const PRIORYTET_PION = [3];      // Główna
+const PRIORYTET_PION = [3, 6];   // Główna + Wschodnia (droga szybkiego ruchu)
 /* ograniczenia prędkości */
 const LIMIT_POZ  = [50, 50, 30, 50, 50, 70, 50];
-const LIMIT_PION = [50, 30, 50, 50, 50, 50, 70];
+const LIMIT_PION = [50, 30, 50, 50, 50, 50, 100];
+const ULICA_SZYBKA = 6;          // indeks ulicy Wschodnia — D-9, 100 km/h, pierwszeństwo
 /* ulica jednokierunkowa: pionowa nr 5, ruch tylko w stronę -z (na północ) */
 const JEDNOKIER_PION = 5;
 const JEDNOKIER_DIR = 3;         // 3 = -z
@@ -1400,6 +1428,10 @@ function rozstawZnaki(G) {
     znakPrzyJezdni(G, 'D3', P(ji), P(j) - POL_HALF - 10, 3, null, 1.2);
   }
 
+  /* droga szybkiego ruchu (D-9, 100 km/h) — znaki na obu końcach */
+  znakPrzyJezdni(G, 'D9', P(ULICA_SZYBKA), -KRANIEC + 6, 1, null, 1.4);
+  znakPrzyJezdni(G, 'D9', P(ULICA_SZYBKA), KRANIEC - 6, 3, null, 1.4);
+
   /* zakazy skrętu */
   for (const k in swiat.skrzyzowania) {
     const sk = swiat.skrzyzowania[k];
@@ -1842,6 +1874,15 @@ function kierunekZKata(k) {
   for (let d = 0; d < 4; d++) { const r = Math.abs(kat(dirKat(d) - k)); if (r < best) { best = r; naj = d; } }
   return naj;
 }
+/* Kierunek dojazdu do skrzyżowania liczony z POZYCJI auta względem jego środka,
+   a nie z chwilowego kąta kierownicy. Kąt potrafi „drgać” przy korekcie toru
+   (np. tuż po skręcie) i przeskakiwać między dwoma kierunkami, co zerowało
+   zapamiętane zatrzymanie na STOP. Pozycja na siatce ulic tak nie drga. */
+function kierWlotu(x, z, sk) {
+  const dx = x - sk.x, dz = z - sk.z;
+  if (Math.abs(dx) >= Math.abs(dz)) return dx > 0 ? 2 : 0;
+  return dz > 0 ? 3 : 1;
+}
 function infoJezdni(x, z) {
   const { i, j } = wezelNajblizszy(x, z);
   const naPion = Math.abs(x - P(i)) <= POL_HALF + 0.4;
@@ -1891,9 +1932,11 @@ function pokazToast(typ, tytul, tresc, kara) {
   el.querySelector('.tyt span').textContent = tytul;
   el.querySelector('.kara').textContent = kara || '';
   el.querySelector('.tresc').textContent = tresc;
+  /* tylko jedno powiadomienie naraz — kolejne od razu zastępuje poprzednie,
+     żeby stos komunikatów nigdy nie rósł i nie zasłaniał jezdni */
+  while (box.firstChild) box.removeChild(box.firstChild);
   box.appendChild(el);
-  while (box.children.length > 3) box.removeChild(box.firstChild);
-  setTimeout(() => el.remove(), typ === 'blad' ? 7600 : 6200);
+  setTimeout(() => { if (el.parentNode) el.remove(); }, typ === 'blad' ? 7600 : 6200);
 }
 
 /* ============================================================
@@ -1912,6 +1955,7 @@ function ocenJazde(dt, kmh) {
   const inf = infoJezdni(auto.x, auto.z);
   const d = kierunekZKata(auto.kier);
   const sk = swiat.skrzyzowania[inf.i + '_' + inf.j];
+  const dWlot = kierWlotu(auto.x, auto.z, sk);   // stabilny kierunek dojazdu — patrz komentarz przy funkcji
   const dx = auto.x - sk.x, dz = auto.z - sk.z;
   const wRdzeniu = Math.abs(dx) < POL_HALF + 1.5 && Math.abs(dz) < POL_HALF + 1.5;
 
@@ -1971,24 +2015,26 @@ function ocenJazde(dt, kmh) {
   /* --- 5. podejście do skrzyżowania --- */
   const doSrodka = Math.hypot(dx, dz);
   const zblizaSie = (dx * Math.cos(auto.kier) + dz * Math.sin(auto.kier)) < 0;
-  const klucz = inf.i + '_' + inf.j + '_' + d;
+  const klucz = inf.i + '_' + inf.j + '_' + dWlot;
 
   if (!wRdzeniu && zblizaSie && doSrodka < 30 && Math.abs(auto.v) > 0.2) {
     if (!sedzia.podejscie || sedzia.podejscie.klucz !== klucz) {
-      sedzia.podejscie = { klucz, sk, d, minV: 99, stop: false, ocenione: false };
-      zapowiedzSkrzyzowanie(sk, d);
+      sedzia.podejscie = { klucz, sk, d: dWlot, minV: 99, stop: false, ocenione: false };
+      zapowiedzSkrzyzowanie(sk, dWlot);
     }
     const p = sedzia.podejscie;
     p.minV = Math.min(p.minV, Math.abs(auto.v));
-    if (Math.abs(auto.v) < 0.55 && doSrodka < POL_HALF + 14) p.stop = true;
-    p.swiatlo = sk.swiatla ? stanSwiatla(sk, d) : null;
+    /* pełne zatrzymanie raz zapamiętane zostaje zapamiętane do końca podejścia —
+       nawet jeśli auto potem lekko przyspieszy, docierając do linii */
+    if (Math.abs(auto.v) < 0.6 && doSrodka < POL_HALF + 16) p.stop = true;
+    p.swiatlo = sk.swiatla ? stanSwiatla(sk, dWlot) : null;
   }
 
   /* --- 6. wjazd na skrzyżowanie: wyrok --- */
   if (wRdzeniu && !sedzia.wSkrzyzowaniu) {
     sedzia.wSkrzyzowaniu = true;
     sedzia.skrzKlucz = inf.i + '_' + inf.j;
-    sedzia.kierWjazdu = d;
+    sedzia.kierWjazdu = sedzia.podejscie && sedzia.podejscie.sk === sk ? sedzia.podejscie.d : dWlot;
     const p = sedzia.podejscie;
     if (p && p.sk === sk && !p.ocenione && Math.abs(auto.v) > 0.3) {
       p.ocenione = true;
@@ -2031,7 +2077,7 @@ function ocenJazde(dt, kmh) {
     sedzia.wSkrzyzowaniu = false;
     const skPrz = swiat.skrzyzowania[sedzia.skrzKlucz];
     if (skPrz) {
-      const wyjazd = d, wjazd = sedzia.kierWjazdu;
+      const wyjazd = (kierWlotu(auto.x, auto.z, skPrz) + 2) % 4, wjazd = sedzia.kierWjazdu;
       const roznica = (wyjazd - wjazd + 4) % 4;
       /* roznica: 0=prosto, 1=skręt w prawo, 2=zawrócenie (180°), 3=skręt w lewo.
          Zwykły skręt w lewo (3) NIE jest zawracaniem — karzemy go tylko
@@ -2053,10 +2099,12 @@ function ocenJazde(dt, kmh) {
     const rx = p.x - auto.x, rz = p.z - auto.z;
     const przod = rx * Math.cos(auto.kier) + rz * Math.sin(auto.kier);
     const bok = -rx * Math.sin(auto.kier) + rz * Math.cos(auto.kier);
-    if (przod > -1 && przod < 11 && Math.abs(bok) < 4.2 && auto.v * 3.6 > 12)
-      wykroczenie('pieszy_brak', 'Nie ustąpiłeś pieszemu',
-        'Pieszy znajduje się na przejściu, a Ty jedziesz ' + Math.round(auto.v * 3.6) +
-        ' km/h. Kierujący ma obowiązek ustąpić pierwszeństwa pieszemu na przejściu i wchodzącemu na nie — trzeba zatrzymać się przed pasami.', 20, true);
+    if (przod > -1 && przod < 11 && Math.abs(bok) < 4.2 && auto.v * 3.6 > 15) {
+      wywolajPolicje('pieszy_brak', 'Nie ustąpiłeś pieszemu',
+        'Pieszy znajdował się na przejściu, a Ty jechałeś ' + Math.round(auto.v * 3.6) +
+        ' km/h. Kierujący ma obowiązek ustąpić pierwszeństwa pieszemu na przejściu i wchodzącemu na nie — trzeba zatrzymać się przed pasami.', 20, true, p);
+      break;
+    }
   }
 
   /* --- 8. kolizje --- */
@@ -2095,6 +2143,7 @@ function ruchZPrawej(sk, d) {
 }
 
 function sprawdzKolizje() {
+  if (policjaAktywna) return;
   /* budynki */
   for (const b of swiat.budynki) {
     const nx = kl(auto.x, b.x - b.w / 2, b.x + b.w / 2);
@@ -2112,20 +2161,21 @@ function sprawdzKolizje() {
   /* inne auta */
   for (const a of ruch) {
     if (Math.hypot(a.x - auto.x, a.z - auto.z) < 3.5) {
-      wykroczenie('kolizja_auto', 'Kolizja z innym pojazdem',
-        'Doszło do zderzenia. Zachowuj bezpieczny odstęp — przy 50 km/h to około 25 metrów, czyli mniej więcej połowa wartości prędkościomierza w metrach.', 30, true);
       const kx = auto.x - a.x, kz = auto.z - a.z, dl = Math.hypot(kx, kz) || 1;
       auto.x = a.x + kx / dl * 3.7; auto.z = a.z + kz / dl * 3.7;
       auto.v *= -0.2; a.v = 0;
+      wywolajPolicje('kolizja_auto', 'Kolizja z innym pojazdem',
+        'Doszło do zderzenia. Zachowuj bezpieczny odstęp — przy 50 km/h to około 25 metrów, czyli mniej więcej połowa wartości prędkościomierza w metrach.', 30, true, a);
+      return;
     }
   }
   /* piesi */
   for (const p of piesi) {
     if (Math.hypot(p.x - auto.x, p.z - auto.z) < 1.7 && Math.abs(auto.v) > 0.6) {
-      wykroczenie('potracenie', 'Potrącenie pieszego',
-        'To najcięższy błąd, jaki można popełnić. Pieszy jest niechroniony — przy 50 km/h szansa na jego przeżycie spada poniżej 20%. Zbliżając się do przejścia, zawsze zdejmuj nogę z gazu.', 45, true);
-      auto.v = 0;
-      p.stan = 'czeka'; p.czekaj = 8;
+      auto.v = 0; p.stan = 'czeka'; p.czekaj = 8;
+      wywolajPolicje('potracenie', 'Potrącenie pieszego',
+        'To najcięższy błąd, jaki można popełnić. Pieszy jest niechroniony — przy 50 km/h szansa na jego przeżycie spada poniżej 20%. Zbliżając się do przejścia, zawsze zdejmuj nogę z gazu.', 45, true, p);
+      return;
     }
   }
 }
@@ -2163,70 +2213,70 @@ const MISJE = [
 
   { nazwa: 'Skręt w prawo', trudnosc: 1, ruch: 16, piesi: 6,
     opis: 'Przećwicz skręt w prawo. Skręcając, zawsze jedziesz blisko prawej krawędzi i ustępujesz pieszym na przejściu.',
-    start: { i: 2, j: 1, d: 1 }, cel: { i: 5, j: 3 },
+    start: { i: 2, j: 1, d: 1 }, cele: [{ i: 5, j: 1 }, { i: 5, j: 4 }, { i: 1, j: 4 }],
     wskazowki: ['Przed skrętem zwolnij do około 20 km/h — w łuku nie hamuje się gwałtownie.',
       'Skręcając w prawo, ustępujesz pieszemu przechodzącemu przez jezdnię, w którą wjeżdżasz.',
       'Po skręcie wracasz na prawy pas nowej ulicy.'] },
 
   { nazwa: 'Skręt w lewo', trudnosc: 2, ruch: 18, piesi: 6,
     opis: 'Skręt w lewo wymaga przecięcia toru jazdy pojazdów z naprzeciwka. Wykonaj go spokojnie i bezpiecznie.',
-    start: { i: 5, j: 4, d: 2 }, cel: { i: 2, j: 1 },
+    start: { i: 5, j: 4, d: 2 }, cele: [{ i: 2, j: 4 }, { i: 2, j: 1 }, { i: 5, j: 1 }],
     wskazowki: ['Skręcając w lewo, ustępujesz pierwszeństwa pojazdom jadącym z przeciwka na wprost.',
       'Nie ścinaj zakrętu — środek skrzyżowania omijasz tak, by nie wjechać na przeciwny pas.',
       'Jeśli nie masz pewności, że zdążysz, poczekaj. Pośpiech na skrzyżowaniu kosztuje najwięcej.'] },
 
   { nazwa: 'Znak STOP', trudnosc: 2, ruch: 20, piesi: 6,
     opis: 'Na trasie napotkasz znaki B-20. Każdy z nich wymaga całkowitego zatrzymania pojazdu przed linią.',
-    start: { i: 1, j: 4, d: 0 }, cel: { i: 4, j: 5 },
+    start: { i: 1, j: 4, d: 0 }, cele: [{ i: 4, j: 4 }, { i: 4, j: 1 }, { i: 1, j: 1 }],
     wskazowki: ['Zatrzymanie oznacza prędkość zero — prędkościomierz musi pokazać 0 km/h.',
       'Zatrzymujesz się przed linią, a jeśli jej nie widzisz, przed samym skrzyżowaniem.',
       'Po zatrzymaniu ruszasz dopiero wtedy, gdy masz pewność, że droga jest wolna.'] },
 
   { nazwa: 'Ustąp pierwszeństwa', trudnosc: 2, ruch: 22, piesi: 6,
     opis: 'Znak A-7 nie każe się zatrzymywać, ale każe ustąpić. Naucz się rozpoznawać, kiedy trzeba stanąć, a kiedy można płynnie wjechać.',
-    start: { i: 5, j: 1, d: 3 }, cel: { i: 2, j: 3 },
+    start: { i: 5, j: 1, d: 3 }, cele: [{ i: 2, j: 1 }, { i: 2, j: 4 }, { i: 5, j: 4 }],
     wskazowki: ['„Ustąpić pierwszeństwa” to nie zmusić innego kierującego do hamowania lub zmiany kierunku.',
       'Do znaku A-7 dojeżdżaj z prędkością pozwalającą na zatrzymanie — zwykle 15–20 km/h.',
       'Tabliczka T-6a pod znakiem pokazuje, którędy biegnie droga z pierwszeństwem.'] },
 
   { nazwa: 'Sygnalizacja świetlna', trudnosc: 2, ruch: 22, piesi: 8,
     opis: 'Przejedź przez skrzyżowania z sygnalizacją. Na czerwonym stój przed linią, na żółtym zatrzymaj się, jeśli możesz to zrobić bezpiecznie.',
-    start: { i: 3, j: 1, d: 1 }, cel: { i: 3, j: 5 },
+    start: { i: 3, j: 1, d: 1 }, cele: [{ i: 3, j: 4 }, { i: 6, j: 4 }, { i: 6, j: 1 }],
     wskazowki: ['Żółte po zielonym oznacza: zatrzymaj się, chyba że jesteś już zbyt blisko linii.',
       'Sygnalizacja ma pierwszeństwo przed znakami pierwszeństwa — znaki obowiązują, gdy światła są wyłączone.',
       'Zielone nie oznacza „jedź bez patrzenia” — najpierw upewnij się, że skrzyżowanie jest wolne.'] },
 
   { nazwa: 'Przejścia dla pieszych', trudnosc: 2, ruch: 20, piesi: 16,
     opis: 'Miasto pełne pieszych. Przećwicz podjeżdżanie do przejść i ustępowanie pierwszeństwa.',
-    start: { i: 0, j: 3, d: 0 }, cel: { i: 5, j: 3 },
+    start: { i: 0, j: 3, d: 0 }, cele: [{ i: 3, j: 3 }, { i: 3, j: 0 }, { i: 6, j: 0 }],
     wskazowki: ['Pieszy ma pierwszeństwo na przejściu i wchodząc na nie. Zatrzymaj się przed pasami.',
       'Przed przejściem i na nim obowiązuje bezwzględny zakaz wyprzedzania.',
       'Znak D-6 oznacza przejście, a A-16 uprzedza o nim wcześniej.'] },
 
   { nazwa: 'Strefa 30', trudnosc: 2, ruch: 20, piesi: 12,
     opis: 'Ulica Kwiatowa ma ograniczenie do 30 km/h. Utrzymaj prędkość przez cały odcinek.',
-    start: { i: 1, j: 0, d: 1 }, cel: { i: 1, j: 5 },
+    start: { i: 1, j: 0, d: 1 }, cele: [{ i: 1, j: 3 }, { i: 4, j: 3 }, { i: 4, j: 5 }],
     wskazowki: ['Znak B-33 obowiązuje do najbliższego skrzyżowania albo do znaku odwołującego B-34.',
       'W obszarze zabudowanym limit podstawowy to 50 km/h przez całą dobę.',
       'Płynna jazda na stałej prędkości zużywa mniej paliwa niż szarpanie gazem.'] },
 
   { nazwa: 'Zakaz wjazdu', trudnosc: 3, ruch: 22, piesi: 10,
     opis: 'Ulica Jaśminowa jest jednokierunkowa. Dojedź do celu, nie wjeżdżając w nią pod prąd.',
-    start: { i: 3, j: 5, d: 0 }, cel: { i: 6, j: 2 },
+    start: { i: 3, j: 5, d: 0 }, cele: [{ i: 5, j: 5 }, { i: 5, j: 2 }, { i: 6, j: 2 }],
     wskazowki: ['Znak B-2 „zakaz wjazdu” najczęściej stoi na wylocie ulicy jednokierunkowej.',
       'Znak D-3 od strony wjazdu potwierdza, że jedziesz zgodnie z kierunkiem ruchu.',
       'Na drodze jednokierunkowej wolno wyprzedzać również prawą stroną.'] },
 
   { nazwa: 'Zakazy skrętu', trudnosc: 3, ruch: 24, piesi: 10,
     opis: 'Na trasie stoją znaki B-21 i B-22. Zaplanuj przejazd tak, by nie skręcić tam, gdzie nie wolno.',
-    start: { i: 0, j: 5, d: 0 }, cel: { i: 4, j: 1 },
+    start: { i: 0, j: 5, d: 0 }, cele: [{ i: 2, j: 5 }, { i: 2, j: 4 }, { i: 2, j: 2 }, { i: 4, j: 2 }, { i: 4, j: 1 }],
     wskazowki: ['Znak zakazu skrętu obowiązuje na najbliższym skrzyżowaniu za znakiem.',
       'Zakaz skrętu w lewo oznacza też zakaz zawracania.',
       'Gdy przegapisz zjazd, nie kombinuj — objedź kwartał.'] },
 
   { nazwa: 'Droga z pierwszeństwem', trudnosc: 3, ruch: 26, piesi: 10,
     opis: 'Przejedź ulicą Wolności — drogą z pierwszeństwem. Sprawdź, czy potrafisz jechać płynnie, nie tracąc czujności.',
-    start: { i: 0, j: 3, d: 0 }, cel: { i: 6, j: 3 },
+    start: { i: 0, j: 3, d: 0 }, cele: [{ i: 2, j: 3 }, { i: 2, j: 0 }, { i: 6, j: 0 }],
     wskazowki: ['Żółty romb D-1 oznacza, że masz pierwszeństwo aż do znaku D-2.',
       'Pierwszeństwo nie zwalnia z ostrożności — ktoś może go nie ustąpić.',
       'Pierwszeństwo nigdy nie działa wobec pieszego na przejściu.'] },
@@ -2247,21 +2297,21 @@ const MISJE = [
 
   { nazwa: 'Godziny szczytu', trudnosc: 4, ruch: 38, piesi: 20,
     opis: 'Ulice są zatłoczone. Utrzymaj odstęp, nie blokuj skrzyżowań i zachowaj spokój.',
-    start: { i: 2, j: 0, d: 1 }, cel: { i: 4, j: 6 },
+    start: { i: 2, j: 0, d: 1 }, cele: [{ i: 2, j: 3 }, { i: 5, j: 3 }, { i: 4, j: 6 }],
     wskazowki: ['Nie wjeżdżaj na skrzyżowanie, jeśli nie masz pewności, że zdołasz je opuścić.',
       'Bezpieczny odstęp w mieście to około 2 sekundy do poprzedzającego pojazdu.',
       'W korku hamuj wcześnie i łagodnie — gwałtowne hamowanie wywołuje kolizje z tyłu.'] },
 
   { nazwa: 'Jazda nocą', trudnosc: 4, ruch: 26, piesi: 14, noc: true,
     opis: 'Nocą widzisz tylko tyle, ile oświetlą reflektory. Zmniejsz prędkość i uważaj na pieszych.',
-    start: { i: 6, j: 4, d: 2 }, cel: { i: 1, j: 1 },
+    start: { i: 6, j: 4, d: 2 }, cele: [{ i: 6, j: 1 }, { i: 3, j: 1 }, { i: 1, j: 1 }],
     wskazowki: ['Prędkość dobieraj tak, byś mógł zatrzymać się w zasięgu świateł.',
       'Pieszy w ciemnym ubraniu jest widoczny z kilkunastu metrów — poza terenem zabudowanym musi nosić odblaski.',
       'Nie patrz w reflektory nadjeżdżających aut; kieruj wzrok na prawą krawędź jezdni.'] },
 
   { nazwa: 'Trasa egzaminacyjna', trudnosc: 4, ruch: 32, piesi: 16,
     opis: 'Pełna trasa sprawdzająca wszystkie umiejętności: pierwszeństwo, światła, prędkość i piesi.',
-    start: { i: 6, j: 6, d: 2 }, cel: { i: 0, j: 1 },
+    start: { i: 6, j: 6, d: 2 }, cele: [{ i: 3, j: 6 }, { i: 3, j: 1 }, { i: 0, j: 1 }],
     wskazowki: ['Egzaminator ocenia płynność jazdy tak samo jak znajomość przepisów.',
       'Jazda zbyt wolna bez powodu też jest błędem — utrudniasz ruch.',
       'Obserwuj znaki w oddali, nie tuż przed maską.'] },
@@ -2273,9 +2323,16 @@ const MISJE = [
       'Przy manewrowaniu używaj krótkich impulsów gazu i hamulca.',
       'Zaparkowany pojazd nie może wystawać poza linie ani blokować przejścia.'] },
 
+  { nazwa: 'Droga szybkiego ruchu', trudnosc: 4, ruch: 22, piesi: 4,
+    opis: 'Ulica Wschodnia ma znak D-9 i podniesiony limit 100 km/h — to najbardziej zbliżony do ekspresowej odcinek w mieście. Przejedź nią od początku do końca, utrzymując płynną, wysoką prędkość.',
+    start: { i: 6, j: 0, d: 1 }, cel: { i: 6, j: 6 },
+    wskazowki: ['Znak D-9 oznacza podwyższony standard drogi — obowiązuje na niej zakaz zawracania i postoju poza zatokami.',
+      'Masz pierwszeństwo na każdym skrzyżowaniu wzdłuż tej ulicy, ale zachowaj ograniczone zaufanie — ktoś może się pomylić.',
+      'Hamowanie z wysokiej prędkości zaczynaj dużo wcześniej niż zwykle — droga hamowania rośnie z kwadratem prędkości.'] },
+
   { nazwa: 'Egzamin państwowy', trudnosc: 4, ruch: 36, piesi: 18, bezPodpowiedzi: true, prog: 80,
     opis: 'Brak podpowiedzi, pełny ruch, wymagane 80 punktów. Egzaminator nie powie Ci, co masz zrobić — musisz wiedzieć sam.',
-    start: { i: 0, j: 6, d: 0 }, cel: { i: 6, j: 0 },
+    start: { i: 0, j: 6, d: 0 }, cele: [{ i: 3, j: 6 }, { i: 3, j: 0 }, { i: 6, j: 0 }],
     wskazowki: ['Instruktor milczy. Wszystkie decyzje podejmujesz na podstawie znaków i sytuacji.',
       'Jeden błąd krytyczny — czerwone światło, brak zatrzymania na STOP, potrącenie — kończy egzamin negatywnie.',
       'Powodzenia. Jedź spokojnie i przewidująco.'] }
@@ -2332,6 +2389,14 @@ function rysujTrase() {
   }
 }
 
+/* ustawia trasę i rysuje znacznik do aktualnego punktu pośredniego / celu */
+function ustawKolejnyCelPodrozy() {
+  const c = stanGry.listaCeli[stanGry.celIndex];
+  stanGry.punktCelu = { x: P(c.i), z: P(c.j) };
+  stanGry.trasa = wyznaczTrase(stanGry.wezelBiezacy, c);
+  rysujTrase();
+}
+
 /* ---------- start misji ---------- */
 function startMisji(nr) {
   const m = MISJE[nr];
@@ -2341,6 +2406,11 @@ function startMisji(nr) {
   stanGry.dystansPrzejechany = 0;
   for (const k in ostatnieZgloszenie) delete ostatnieZgloszenie[k];
   sedzia.podejscie = null; sedzia.wSkrzyzowaniu = false; ostatniaZapowiedz = '';
+  /* gdyby poprzednia misja urwala sie w trakcie kontroli drogowej */
+  if (typeof usunPolicje === 'function') usunPolicje();
+  policjaAktywna = false; policjaDane = null;
+  document.getElementById('policja').classList.add('ukryty');
+  document.getElementById('komunikaty').innerHTML = '';
 
   const poz = punktPasa(m.start.i, m.start.j, m.start.d, 26);
   auto.x = poz.x; auto.z = poz.z; auto.kier = dirKat(m.start.d);
@@ -2353,14 +2423,18 @@ function startMisji(nr) {
   if (m.typ === 'parking') {
     const pk = swiat.parkingi.filter(p => p.misyjny)[m.parking] || swiat.parkingi[0];
     stanGry.parking = pk;
+    stanGry.listaCeli = null;
     stanGry.punktCelu = { x: pk.x, z: pk.z };
     stanGry.trasa = wyznaczTrase({ i: m.start.i, j: m.start.j }, { i: pk.i, j: pk.j });
   } else {
     stanGry.parking = null;
-    stanGry.punktCelu = { x: P(m.cel.i), z: P(m.cel.j) };
-    stanGry.trasa = wyznaczTrase({ i: m.start.i, j: m.start.j }, m.cel);
+    /* mission może mieć kilka punktów pośrednich (m.cele) zamiast jednego celu (m.cel) —
+       wymusza to trasę z wieloma skrętami zamiast prostej linii z 1–2 zakrętami */
+    stanGry.listaCeli = m.cele ? m.cele.slice() : [m.cel];
+    stanGry.celIndex = 0;
+    stanGry.wezelBiezacy = { i: m.start.i, j: m.start.j };
+    ustawKolejnyCelPodrozy();
   }
-  rysujTrase();
 
   document.getElementById('misjaNr').textContent = 'Lekcja ' + (nr + 1) + ' z ' + MISJE.length;
   document.getElementById('misjaTytul').textContent = m.nazwa;
@@ -2391,7 +2465,20 @@ function sprawdzCel(kmh) {
     } else stanGry.postojCzas = 0;
   } else {
     const c = stanGry.punktCelu;
-    if (Math.hypot(auto.x - c.x, auto.z - c.z) < 11 && Math.abs(auto.v) < 1.4) zakonczMisje(true);
+    const dyst = Math.hypot(auto.x - c.x, auto.z - c.z);
+    const ostatni = stanGry.celIndex >= stanGry.listaCeli.length - 1;
+    /* punkty pośrednie wystarczy minąć w pobliżu (bez zatrzymania) — dopiero
+       ostatni, właściwy cel misji wymaga zatrzymania, tak jak dotychczas */
+    const dotarl = ostatni ? (dyst < 11 && Math.abs(auto.v) < 1.4) : (dyst < 13);
+    if (dotarl) {
+      if (ostatni) { zakonczMisje(true); }
+      else {
+        stanGry.wezelBiezacy = stanGry.listaCeli[stanGry.celIndex];
+        stanGry.celIndex++;
+        ustawKolejnyCelPodrozy();
+        pochwala('Punkt pośredni zaliczony', 'Na mapie pojawił się kolejny cel — jedź dalej zgodnie z trasą.');
+      }
+    }
   }
 }
 
@@ -2586,15 +2673,18 @@ function aktualizujPanelSwiatla() {
 function aktualizujCel() {
   const c = stanGry.punktCelu; if (!c) return;
   const dyst = Math.hypot(auto.x - c.x, auto.z - c.z);
-  document.getElementById('dystans').textContent = Math.round(dyst) + ' m';
+  let txt = Math.round(dyst) + ' m';
+  if (stanGry.listaCeli && stanGry.listaCeli.length > 1)
+    txt += ' · punkt ' + (stanGry.celIndex + 1) + '/' + stanGry.listaCeli.length;
+  document.getElementById('dystans').textContent = txt;
   const wzgl = kat(Math.atan2(c.z - auto.z, c.x - auto.x) - auto.kier);
   document.getElementById('strzalkaCel').style.transform = 'rotate(' + (wzgl * 180 / Math.PI + 0) + 'deg)';
 }
 
 /* ---------- powrót na jezdnię (klawisz R) ---------- */
 addEventListener('keydown', e => {
-  if (e.code === 'Escape' && stanGry.aktywna) { zakonczMisje(false); }
-  if (e.key === 'r' || e.key === 'R') {
+  if (e.code === 'Escape' && stanGry.aktywna && !policjaAktywna) { zakonczMisje(false); }
+  if ((e.key === 'r' || e.key === 'R') && !policjaAktywna) {
     const inf = infoJezdni(auto.x, auto.z);
     const d = kierunekZKata(auto.kier);
     const p = punktPasa(inf.i, inf.j, d, 14);
@@ -2602,6 +2692,76 @@ addEventListener('keydown', e => {
     podpowiedz('Ustawiono na pasie ruchu', 'Auto wróciło na prawy pas najbliższej ulicy, zgodnie z kierunkiem jazdy.');
   }
 });
+
+/* ============================================================
+   KONTROLA DROGOWA (POLICJA)
+   Zamiast automatycznie karać za kolizję z autem, potrącenie pieszego
+   albo nieustąpienie mu pierwszeństwa, na miejsce „podjeżdża” szybko
+   radiowóz i pyta, czy to Twoja wina. Odpowiedź „nie” anuluje karę —
+   winnym zostaje drugi uczestnik zdarzenia (auto zostaje usunięte
+   i zastąpione nowym gdzie indziej; pieszy po prostu wraca na chodnik).
+   ============================================================ */
+let policjaAktywna = false;
+let policjaDane = null;
+let policjaPojazd = null, policjaSwiatlo = null;
+
+function wywolajPolicje(kod, tytul, wyjasnienie, kara, krytyczne, winowajca) {
+  if (policjaAktywna) return;
+  policjaAktywna = true;
+  policjaDane = { kod, tytul, wyjasnienie, kara, krytyczne, winowajca };
+  auto.v = 0;
+  spawnPolicje();
+  document.getElementById('policjaOpis').textContent =
+    tytul + '. Na miejsce podjechał patrol. ' + wyjasnienie + ' Czy to Twoja wina?';
+  document.getElementById('policja').classList.remove('ukryty');
+}
+
+function spawnPolicje() {
+  const bok = Math.random() < 0.5 ? -1 : 1;
+  const bx = -Math.sin(auto.kier), bz = Math.cos(auto.kier);
+  const x = auto.x + bx * bok * 4.3 - Math.cos(auto.kier) * 5.5;
+  const z = auto.z + bz * bok * 4.3 - Math.sin(auto.kier) * 5.5;
+  policjaPojazd = zbudujAuto(0xF2F3F0, false);
+  policjaPojazd.position.set(x, 0, z);
+  policjaPojazd.rotation.y = -auto.kier + Math.PI / 2;
+  const lampa = new THREE.Mesh(new THREE.BoxGeometry(0.95, 0.22, 0.42),
+    new THREE.MeshLambertMaterial({ color: 0xD8232A, emissive: 0xD8232A, emissiveIntensity: 1 }));
+  lampa.position.set(0, 1.9, -0.2);
+  policjaPojazd.add(lampa);
+  policjaSwiatlo = lampa.material;
+}
+function usunPolicje() {
+  if (policjaPojazd) { scena.remove(policjaPojazd); policjaPojazd = null; policjaSwiatlo = null; }
+}
+
+/* usuwa winnego uczestnika zdarzenia ze sceny — auto dostaje zastępstwo
+   gdzie indziej w mieście, pieszy po prostu wraca na chodnik */
+function aresztujIUsun(obiekt) {
+  if (!obiekt) return;
+  const idxAuto = ruch.indexOf(obiekt);
+  if (idxAuto >= 0) {
+    scena.remove(obiekt.mesh);
+    ruch.splice(idxAuto, 1);
+    dodajAutoAI(Math.floor(losuj(0, NG)), Math.floor(losuj(0, NG)), Math.floor(losuj(0, 4)));
+    return;
+  }
+  if (piesi.indexOf(obiekt) >= 0) { obiekt.stan = 'czeka'; obiekt.czekaj = losuj(5, 10); }
+}
+
+function odpowiedzPolicji(przyznajeSie) {
+  document.getElementById('policja').classList.add('ukryty');
+  const d = policjaDane;
+  if (przyznajeSie) {
+    wykroczenie(d.kod, d.tytul, d.wyjasnienie, d.kara, d.krytyczne);
+  } else {
+    aresztujIUsun(d.winowajca);
+    pochwala('Sprawa wyjaśniona', 'Patrol uznał, że to nie Twoja wina — drugi uczestnik zdarzenia został ukarany, a Ty jedziesz dalej bez punktów karnych.');
+  }
+  usunPolicje();
+  policjaAktywna = false; policjaDane = null;
+}
+document.getElementById('btnPolicjaTak').onclick = () => odpowiedzPolicji(true);
+document.getElementById('btnPolicjaNie').onclick = () => odpowiedzPolicji(false);
 
 /* ============================================================
    PĘTLA GŁÓWNA
@@ -2614,14 +2774,19 @@ function petla() {
   poprzedniCzas = teraz;
   dt = Math.min(dt, 0.05);
 
-  const kmh = fizykaAuta(dt);
-  aktualizujSwiatla(dt);
-  aktualizujRuch(dt);
-  aktualizujPieszych(dt);
-  aktualizujKamere(dt);
-  if (stanGry.aktywna) ocenJazde(dt, Math.abs(kmh));
-
-  if (swiat.pierscien) swiat.pierscien.rotation.z += dt * 0.7;
+  let kmh = auto.v * 3.6;
+  if (!policjaAktywna) {
+    kmh = fizykaAuta(dt);
+    aktualizujSwiatla(dt);
+    aktualizujRuch(dt);
+    aktualizujPieszych(dt);
+    aktualizujKamere(dt);
+    if (stanGry.aktywna) ocenJazde(dt, Math.abs(kmh));
+    if (swiat.pierscien) swiat.pierscien.rotation.z += dt * 0.7;
+  } else if (policjaSwiatlo) {
+    /* światła radiowozu migają, nawet gdy świat stoi w miejscu */
+    policjaSwiatlo.emissiveIntensity = 0.4 + Math.abs(Math.sin(teraz / 110)) * 1.3;
+  }
 
   document.getElementById('predkoscVal').textContent = Math.round(Math.abs(kmh));
   document.getElementById('biegVal').textContent = auto.bieg;
