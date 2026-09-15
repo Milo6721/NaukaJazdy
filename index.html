@@ -2160,6 +2160,7 @@ function sprawdzKolizje() {
   }
   /* inne auta */
   for (const a of ruch) {
+    if (a.zatrzymany) continue;          // sprawca pod klatką — osłania go już krata
     if (Math.hypot(a.x - auto.x, a.z - auto.z) < 3.5) {
       const kx = auto.x - a.x, kz = auto.z - a.z, dl = Math.hypot(kx, kz) || 1;
       auto.x = a.x + kx / dl * 3.7; auto.z = a.z + kz / dl * 3.7;
@@ -2171,6 +2172,7 @@ function sprawdzKolizje() {
   }
   /* piesi */
   for (const p of piesi) {
+    if (p.czekaj > 50) continue;         // pieszy zatrzymany przez patrol
     if (Math.hypot(p.x - auto.x, p.z - auto.z) < 1.7 && Math.abs(auto.v) > 0.6) {
       auto.v = 0; p.stan = 'czeka'; p.czekaj = 8;
       wywolajPolicje('potracenie', 'Potrącenie pieszego',
@@ -2408,6 +2410,10 @@ function startMisji(nr) {
   sedzia.podejscie = null; sedzia.wSkrzyzowaniu = false; ostatniaZapowiedz = '';
   /* gdyby poprzednia misja urwala sie w trakcie kontroli drogowej */
   if (typeof usunPolicje === 'function') usunPolicje();
+  if (typeof aresztowania !== 'undefined') {
+    aresztowania.forEach(a => { scena.remove(a.klatka); scena.remove(a.policjant); });
+    aresztowania = [];
+  }
   policjaAktywna = false; policjaDane = null;
   document.getElementById('policja').classList.add('ukryty');
   document.getElementById('komunikaty').innerHTML = '';
@@ -2734,18 +2740,121 @@ function usunPolicje() {
   if (policjaPojazd) { scena.remove(policjaPojazd); policjaPojazd = null; policjaSwiatlo = null; }
 }
 
-/* usuwa winnego uczestnika zdarzenia ze sceny — auto dostaje zastępstwo
-   gdzie indziej w mieście, pieszy po prostu wraca na chodnik */
-function aresztujIUsun(obiekt) {
-  if (!obiekt) return;
-  const idxAuto = ruch.indexOf(obiekt);
-  if (idxAuto >= 0) {
-    scena.remove(obiekt.mesh);
-    ruch.splice(idxAuto, 1);
-    dodajAutoAI(Math.floor(losuj(0, NG)), Math.floor(losuj(0, NG)), Math.floor(losuj(0, 4)));
-    return;
+/* ── aresztowanie: policjant + opadająca klatka ──
+   Po odpowiedzi „to nie moja wina” patrol zatrzymuje sprawcę: z radiowozu
+   wysiada policjant z bronią, a na winowajcę opada z góry stalowa klatka.
+   Krata zostaje przez chwilę na jezdni jako realna przeszkoda — trzeba ją ominąć. */
+let aresztowania = [];
+
+function zbudujPolicjanta(x, z, kierDo) {
+  const g = new THREE.Group();
+  const mundur = new THREE.MeshLambertMaterial({ color: 0x1B2A4A });
+  const tul = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.74, 0.3), mundur);
+  tul.position.y = 1.14; tul.castShadow = true; g.add(tul);
+  const glowa = new THREE.Mesh(new THREE.SphereGeometry(0.2, 10, 8),
+    new THREE.MeshLambertMaterial({ color: 0xE0B48C }));
+  glowa.position.y = 1.7; g.add(glowa);
+  const czapka = new THREE.Mesh(new THREE.CylinderGeometry(0.23, 0.23, 0.12, 10), mundur);
+  czapka.position.y = 1.86; g.add(czapka);
+  const nogi = new THREE.Mesh(new THREE.BoxGeometry(0.42, 0.78, 0.24),
+    new THREE.MeshLambertMaterial({ color: 0x141A28 }));
+  nogi.position.y = 0.4; g.add(nogi);
+  /* wyciągnięta ręka z pistoletem */
+  const reka = new THREE.Mesh(new THREE.BoxGeometry(0.62, 0.15, 0.15),
+    new THREE.MeshLambertMaterial({ color: 0xE0B48C }));
+  reka.position.set(0.42, 1.3, 0.16); g.add(reka);
+  const bron = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.14, 0.1),
+    new THREE.MeshLambertMaterial({ color: 0x15181C }));
+  bron.position.set(0.8, 1.3, 0.16); g.add(bron);
+  g.position.set(x, 0, z);
+  g.rotation.y = -kierDo + Math.PI / 2;
+  scena.add(g);
+  return g;
+}
+
+function zbudujKlatke(x, z) {
+  const g = new THREE.Group();
+  const matPret = new THREE.MeshLambertMaterial({ color: 0x6E767F });
+  const geoPret = new THREE.CylinderGeometry(0.09, 0.09, 4.2, 6);
+  const R = 1.9;
+  for (let k = 0; k < 10; k++) {
+    const a = k / 10 * Math.PI * 2;
+    const p = new THREE.Mesh(geoPret, matPret);
+    p.position.set(Math.cos(a) * R, 2.1, Math.sin(a) * R);
+    p.castShadow = true; g.add(p);
   }
-  if (piesi.indexOf(obiekt) >= 0) { obiekt.stan = 'czeka'; obiekt.czekaj = losuj(5, 10); }
+  const dach = new THREE.Mesh(new THREE.CylinderGeometry(R + 0.12, R + 0.12, 0.16, 12), matPret);
+  dach.position.y = 4.2; dach.castShadow = true; g.add(dach);
+  g.position.set(x, 14, z);           // start wysoko — klatka opada
+  scena.add(g);
+  return g;
+}
+
+function rozpocznijAresztowanie(obiekt) {
+  if (!obiekt) return;
+  const x = obiekt.x, z = obiekt.z;
+  const kierDoSprawcy = Math.atan2(z - auto.z, x - auto.x);
+  const a = {
+    obiekt, x, z, t: 0, faza: 'opadanie',
+    klatka: zbudujKlatke(x, z),
+    policjant: zbudujPolicjanta(
+      auto.x + Math.cos(kierDoSprawcy) * 3.2 - Math.sin(kierDoSprawcy) * 2.4,
+      auto.z + Math.sin(kierDoSprawcy) * 3.2 + Math.cos(kierDoSprawcy) * 2.4,
+      kierDoSprawcy),
+    promien: 2.6
+  };
+  /* sprawca stoi w miejscu — nie ucieka spod klatki */
+  if (ruch.indexOf(obiekt) >= 0) { obiekt.v = 0; obiekt.vDoc = 0; obiekt.zatrzymany = true; }
+  if (piesi.indexOf(obiekt) >= 0) { obiekt.stan = 'czeka'; obiekt.czekaj = 99; }
+  aresztowania.push(a);
+}
+
+function aktualizujAresztowania(dt) {
+  for (let n = aresztowania.length - 1; n >= 0; n--) {
+    const a = aresztowania[n];
+    a.t += dt;
+    if (a.faza === 'opadanie') {
+      /* szybki, ciężki opad z odbiciem na końcu */
+      const post = Math.min(1, a.t / 0.75);
+      a.klatka.position.y = 14 * (1 - post * post);
+      if (post >= 1) {
+        a.klatka.position.y = 0;
+        a.faza = 'zamkniety'; a.t = 0;
+        podpowiedz('Sprawca zatrzymany', 'Patrol zamknął winowajcę. Krata blokuje część jezdni — omiń ją ostrożnie i jedź dalej.');
+      }
+    } else if (a.faza === 'zamkniety') {
+      a.klatka.rotation.y += dt * 0.25;
+      if (a.t > 11) { a.faza = 'znika'; a.t = 0; }
+    } else {
+      a.klatka.position.y += dt * 9;     // klatka unosi się i znika
+      if (a.t > 1.5) {
+        scena.remove(a.klatka); scena.remove(a.policjant);
+        const idx = ruch.indexOf(a.obiekt);
+        if (idx >= 0) {
+          scena.remove(a.obiekt.mesh); ruch.splice(idx, 1);
+          dodajAutoAI(Math.floor(losuj(0, NG)), Math.floor(losuj(0, NG)), Math.floor(losuj(0, 4)));
+        }
+        if (piesi.indexOf(a.obiekt) >= 0) { a.obiekt.stan = 'czeka'; a.obiekt.czekaj = losuj(3, 8); }
+        aresztowania.splice(n, 1);
+      }
+    }
+  }
+}
+
+/* krata jako przeszkoda — odbija auto, ale nie nalicza punktów karnych */
+function kolizjaZKlatka() {
+  for (const a of aresztowania) {
+    if (a.faza === 'znika') continue;
+    const dx = auto.x - a.x, dz = auto.z - a.z;
+    const dl = Math.hypot(dx, dz);
+    if (dl < a.promien + 1.5) {
+      const s = (a.promien + 1.5) / (dl || 1);
+      auto.x = a.x + dx * s; auto.z = a.z + dz * s;
+      auto.v *= -0.25;
+      return true;
+    }
+  }
+  return false;
 }
 
 function odpowiedzPolicji(przyznajeSie) {
@@ -2753,11 +2862,13 @@ function odpowiedzPolicji(przyznajeSie) {
   const d = policjaDane;
   if (przyznajeSie) {
     wykroczenie(d.kod, d.tytul, d.wyjasnienie, d.kara, d.krytyczne);
+    usunPolicje();
   } else {
-    aresztujIUsun(d.winowajca);
-    pochwala('Sprawa wyjaśniona', 'Patrol uznał, że to nie Twoja wina — drugi uczestnik zdarzenia został ukarany, a Ty jedziesz dalej bez punktów karnych.');
+    rozpocznijAresztowanie(d.winowajca);
+    pochwala('Patrol wkracza', 'Policjant wysiada z radiowozu — winowajca zostaje zatrzymany, a Ty nie dostajesz punktów karnych.');
+    /* radiowóz zostaje na miejscu do czasu zakończenia zatrzymania */
+    setTimeout(usunPolicje, 12000);
   }
-  usunPolicje();
   policjaAktywna = false; policjaDane = null;
 }
 document.getElementById('btnPolicjaTak').onclick = () => odpowiedzPolicji(true);
@@ -2782,6 +2893,8 @@ function petla() {
     aktualizujPieszych(dt);
     aktualizujKamere(dt);
     if (stanGry.aktywna) ocenJazde(dt, Math.abs(kmh));
+    aktualizujAresztowania(dt);
+    kolizjaZKlatka();
     if (swiat.pierscien) swiat.pierscien.rotation.z += dt * 0.7;
   } else if (policjaSwiatlo) {
     /* światła radiowozu migają, nawet gdy świat stoi w miejscu */
