@@ -425,6 +425,7 @@ const PRIORYTET_PION = [3, 6];   // Główna + Wschodnia (droga szybkiego ruchu)
 const LIMIT_POZ  = [50, 50, 30, 50, 50, 70, 50];
 const LIMIT_PION = [50, 30, 50, 50, 50, 50, 100];
 const ULICA_SZYBKA = 6;          // indeks ulicy Wschodnia — D-9, 100 km/h, pierwszeństwo
+const RONDO_I = 4, RONDO_J = 4;  // skrzyżowanie zamienione na rondo (C-12 + A-7)
 /* ulica jednokierunkowa: pionowa nr 5, ruch tylko w stronę -z (na północ) */
 const JEDNOKIER_PION = 5;
 const JEDNOKIER_DIR = 3;         // 3 = -z
@@ -1136,6 +1137,7 @@ function budujMiasto() {
     }
 
   budujOznaczeniaPoziome(G);
+  budujTory(G);
   budujSkrzyzowania(G);
   budujLatarnie(G);
   rozstawZnaki(G);
@@ -1230,6 +1232,18 @@ function drzewo(G, x, z) {
 }
 
 /* ---------- oznaczenia poziome ---------- */
+/* tory tramwajowe na ulicy Wolności (droga z pierwszeństwem, PRIORYTET_POZ[0]) —
+   tramwaj (A-21) pojawia się tylko w misjach z flagą tram, ale tory widać zawsze */
+function budujTory(G) {
+  const z = P(PRIORYTET_POZ[0]);
+  const matSzyna = new THREE.MeshLambertMaterial({ color: 0x2A2C30 });
+  [-1.05, 1.05].forEach(off => {
+    const szyna = new THREE.Mesh(new THREE.PlaneGeometry(KRANIEC * 2, 0.16), matSzyna);
+    szyna.rotation.x = -Math.PI / 2; szyna.position.set(0, 0.025, z + off);
+    G.add(szyna);
+  });
+}
+
 function budujOznaczeniaPoziome(G) {
   const y = 0.02;
   /* osiowa linia przerywana — jeden mesh na odcinek */
@@ -1297,9 +1311,26 @@ function budujSkrzyzowania(G) {
       if (i === 2 && j === 4) dane.zakazLewo = true;
       if (i === 4 && j === 2) dane.zakazPrawo = true;
       if (i === 1 && j === 5) dane.zakazLewo = true;
+      /* rondo — jedno, dedykowane skrzyżowanie w mieście */
+      if (i === RONDO_I && j === RONDO_J) {
+        dane.rondo = true; dane.swiatla = false;
+        for (let d = 0; d < 4; d++) dane.regula[d] = 'rondo';
+      }
       swiat.skrzyzowania[i + '_' + j] = dane;
-      if (swiatla) postawSygnalizacje(G, dane);
+      if (dane.swiatla) postawSygnalizacje(G, dane);
+      if (dane.rondo) budujWyspeRonda(G, dane);
     }
+}
+
+/* fizyczna wyspa na środku ronda — trzeba ją objechać, tak jak w realnym mieście */
+function budujWyspeRonda(G, sk) {
+  const wyspa = new THREE.Mesh(new THREE.CylinderGeometry(3.1, 3.3, 0.5, 20),
+    new THREE.MeshLambertMaterial({ color: 0x8FA07A }));
+  wyspa.position.set(sk.x, 0.25, sk.z); wyspa.castShadow = true; wyspa.receiveShadow = true; G.add(wyspa);
+  const krawez = new THREE.Mesh(new THREE.CylinderGeometry(3.35, 3.35, 0.22, 20), MAT.krawez);
+  krawez.position.set(sk.x, 0.11, sk.z); G.add(krawez);
+  drzewo(G, sk.x, sk.z);
+  swiat.rondo = { x: sk.x, z: sk.z, promien: 3.35 };
 }
 
 function postawSygnalizacje(G, sk) {
@@ -1404,6 +1435,10 @@ function rozstawZnaki(G) {
         else if (reg === 'glowna') znakPrzyJezdni(G, 'D1', osX, osZ, d, null, 1.2);
         else if (reg === 'swiatla' && (i + j) % 4 === 0)
           znakPrzyJezdni(G, 'A29', osX - dx * 14, osZ - dz * 14, d);
+        else if (reg === 'rondo') {
+          znakPrzyJezdni(G, 'C12', osX, osZ, d);
+          znakPrzyJezdni(G, 'A7', osX - dx * 4.4, osZ - dz * 4.4, d, null, 1.05);
+        }
         znakPrzyJezdni(G, 'D6', sk.x - dx * (POL_HALF + 1.5), sk.z - dz * (POL_HALF + 1.5), d, null, 1.2);
       }
     }
@@ -1749,6 +1784,7 @@ function aktualizujRuch(dt) {
     a.mesh.position.set(a.x, 0, a.z);
     a.mesh.rotation.y = -a.kier + Math.PI / 2;
     a.mesh.userData.stopy.emissiveIntensity = a.v < 1 ? 1.3 : 0.3;
+    if (a.lampaKaretki) a.lampaKaretki.emissiveIntensity = 0.4 + Math.abs(Math.sin(performance.now() / 100 + a.i)) * 1.3;
   }
 }
 
@@ -2070,6 +2106,12 @@ function ocenJazde(dt, kmh) {
       } else if (reg === 'glowna' && p.minV > 13.5) {
         wykroczenie('glowna_szybko', 'Za szybko przez skrzyżowanie',
           'Masz pierwszeństwo (znak D-1), ale obowiązuje zasada ograniczonego zaufania. Przez skrzyżowanie przejeżdża się z prędkością pozwalającą zareagować na cudzy błąd.', 6);
+      } else if (reg === 'rondo') {
+        const kol = ruchNaKolizji(sk, p.d);
+        if (kol && p.minV > 3.2)
+          wykroczenie('rondo_pierwszenstwo', 'Nie ustąpiłeś pierwszeństwa na rondzie',
+            'Znaki C-12 i A-7 nakazują ustąpić pierwszeństwa pojazdom już znajdującym się na rondzie. Zwolnij na wlocie i wjeżdżaj dopiero, gdy krąg jest wolny.', 22, true);
+        else pochwala('Płynny wjazd na rondo', 'Ustąpiłeś ruchowi okrężnemu i wjechałeś dopiero, gdy było bezpiecznie.');
       }
     }
   }
@@ -2091,6 +2133,23 @@ function ocenJazde(dt, kmh) {
         wykroczenie('zakazprawo', 'Skręt wbrew znakowi B-22',
           'Znak B-22 zabraniał skrętu w prawo na tym skrzyżowaniu. Trzeba było pojechać prosto i zawrócić w dozwolonym miejscu.', 18, true);
     }
+  }
+
+  /* --- 6b. karetka na sygnale, którą blokujesz --- */
+  for (const a of ruch) {
+    if (!a.karetka) continue;
+    const rx = a.x - auto.x, rz = a.z - auto.z, dyst = Math.hypot(rx, rz);
+    if (dyst > 16) continue;
+    const zaAutem = (rx * Math.cos(auto.kier) + rz * Math.sin(auto.kier)) < 0;
+    const wLinii = Math.abs(-rx * Math.sin(auto.kier) + rz * Math.cos(auto.kier)) < 2.6;
+    if (zaAutem && wLinii && Math.abs(auto.v) > 1) {
+      sedzia.karetkaCzas = (sedzia.karetkaCzas || 0) + dt;
+      if (sedzia.karetkaCzas > 4) {
+        sedzia.karetkaCzas = 0;
+        wykroczenie('karetka', 'Zablokowałeś karetkę pogotowia',
+          'Pojazd uprzywilejowany z włączonymi sygnałami ma pierwszeństwo przed wszystkimi innymi uczestnikami ruchu. Zjedź w miarę możliwości do prawej krawędzi i zwolnij, żeby go przepuścić.', 10, false);
+      }
+    } else sedzia.karetkaCzas = 0;
   }
 
   /* --- 7. piesi na przejściu --- */
@@ -2166,7 +2225,8 @@ function sprawdzKolizje() {
       auto.x = a.x + kx / dl * 3.7; auto.z = a.z + kz / dl * 3.7;
       auto.v *= -0.2; a.v = 0;
       wywolajPolicje('kolizja_auto', 'Kolizja z innym pojazdem',
-        'Doszło do zderzenia. Zachowuj bezpieczny odstęp — przy 50 km/h to około 25 metrów, czyli mniej więcej połowa wartości prędkościomierza w metrach.', 30, true, a);
+        'Doszło do zderzenia. Zachowuj bezpieczny odstęp — przy 50 km/h to około 25 metrów, czyli mniej więcej połowa wartości prędkościomierza w metrach.', 30, true, a,
+        { replay: zrzutHistorii() });
       return;
     }
   }
@@ -2276,7 +2336,7 @@ const MISJE = [
       'Zakaz skrętu w lewo oznacza też zakaz zawracania.',
       'Gdy przegapisz zjazd, nie kombinuj — objedź kwartał.'] },
 
-  { nazwa: 'Droga z pierwszeństwem', trudnosc: 3, ruch: 26, piesi: 10,
+  { nazwa: 'Droga z pierwszeństwem', trudnosc: 3, ruch: 26, piesi: 10, tram: true,
     opis: 'Przejedź ulicą Wolności — drogą z pierwszeństwem. Sprawdź, czy potrafisz jechać płynnie, nie tracąc czujności.',
     start: { i: 0, j: 3, d: 0 }, cele: [{ i: 2, j: 3 }, { i: 2, j: 0 }, { i: 6, j: 0 }],
     wskazowki: ['Żółty romb D-1 oznacza, że masz pierwszeństwo aż do znaku D-2.',
@@ -2291,13 +2351,13 @@ const MISJE = [
       'Auto musi stanąć w obrębie linii, równolegle do krawężnika, z prędkością zero.'] },
 
   { nazwa: 'Przez pół miasta', trudnosc: 3, ruch: 28, piesi: 14,
-    opis: 'Dłuższa trasa z kilkoma zmianami kierunku. Trzymaj się mapy i czytaj znaki na bieżąco.',
-    start: { i: 0, j: 0, d: 0 }, cel: { i: 5, j: 5 },
+    opis: 'Dłuższa trasa z kilkoma zmianami kierunku, prowadząca przez rondo w centrum. Trzymaj się mapy i czytaj znaki na bieżąco.',
+    start: { i: 0, j: 0, d: 0 }, cele: [{ i: 4, j: 4 }, { i: 5, j: 5 }],
     wskazowki: ['Zielona linia na mapie pokazuje sugerowaną trasę — nie jest obowiązkowa.',
       'Planuj manewr wcześniej: pas i prędkość dobiera się przed skrzyżowaniem, nie na nim.',
       'Jeśli zgubisz drogę, zatrzymaj się w bezpiecznym miejscu i spójrz na mapę.'] },
 
-  { nazwa: 'Godziny szczytu', trudnosc: 4, ruch: 38, piesi: 20,
+  { nazwa: 'Godziny szczytu', trudnosc: 4, ruch: 38, piesi: 20, tram: true, karetka: true,
     opis: 'Ulice są zatłoczone. Utrzymaj odstęp, nie blokuj skrzyżowań i zachowaj spokój.',
     start: { i: 2, j: 0, d: 1 }, cele: [{ i: 2, j: 3 }, { i: 5, j: 3 }, { i: 4, j: 6 }],
     wskazowki: ['Nie wjeżdżaj na skrzyżowanie, jeśli nie masz pewności, że zdołasz je opuścić.',
@@ -2332,7 +2392,7 @@ const MISJE = [
       'Masz pierwszeństwo na każdym skrzyżowaniu wzdłuż tej ulicy, ale zachowaj ograniczone zaufanie — ktoś może się pomylić.',
       'Hamowanie z wysokiej prędkości zaczynaj dużo wcześniej niż zwykle — droga hamowania rośnie z kwadratem prędkości.'] },
 
-  { nazwa: 'Egzamin państwowy', trudnosc: 4, ruch: 36, piesi: 18, bezPodpowiedzi: true, prog: 80,
+  { nazwa: 'Egzamin państwowy', trudnosc: 4, ruch: 36, piesi: 18, bezPodpowiedzi: true, prog: 80, tram: true, karetka: true,
     opis: 'Brak podpowiedzi, pełny ruch, wymagane 80 punktów. Egzaminator nie powie Ci, co masz zrobić — musisz wiedzieć sam.',
     start: { i: 0, j: 6, d: 0 }, cele: [{ i: 3, j: 6 }, { i: 3, j: 0 }, { i: 6, j: 0 }],
     wskazowki: ['Instruktor milczy. Wszystkie decyzje podejmujesz na podstawie znaków i sytuacji.',
@@ -2414,6 +2474,8 @@ function startMisji(nr) {
     aresztowania.forEach(a => { scena.remove(a.klatka); scena.remove(a.policjant); });
     aresztowania = [];
   }
+  historiaAuta.length = 0;
+  stanGry.policjaTaranWykonana = false;
   policjaAktywna = false; policjaDane = null;
   document.getElementById('policja').classList.add('ukryty');
   document.getElementById('komunikaty').innerHTML = '';
@@ -2423,6 +2485,8 @@ function startMisji(nr) {
   auto.v = 0; auto.skret = 0; auto.bieg = 'P';
 
   stworzRuch(m.ruch); stworzPieszych(m.piesi);
+  ustawTramwaj(!!m.tram);
+  ustawKaretki(!!m.karetka);
   ustawPore(!!m.noc);
   if (auto.mesh.userData.reflektor) auto.mesh.userData.reflektor.intensity = m.noc ? 2.6 : 0;
 
@@ -2531,6 +2595,13 @@ function zakonczMisje(sukces) {
     li.querySelector('.bTyt span').textContent = b.tytul + (b.ile > 1 ? ' ×' + b.ile : '');
     li.querySelector('.bIle').textContent = '−' + (b.kara * b.ile) + ' pkt' + (b.krytyczne ? ' · krytyczny' : '');
     li.querySelector('.bOpis').textContent = b.wyjasnienie;
+    if (b.replay) {
+      const btnR = document.createElement('button');
+      btnR.className = 'btn'; btnR.style.marginTop = '8px'; btnR.style.padding = '6px 12px'; btnR.style.fontSize = '14px';
+      btnR.textContent = '▶ Obejrzyj powtórkę';
+      btnR.onclick = () => odtworzPowtorke(b.replay);
+      li.appendChild(btnR);
+    }
     lb.appendChild(li);
   });
   document.getElementById('bezBledow').style.display = stanGry.bledy.length ? 'none' : 'block';
@@ -2711,12 +2782,232 @@ let policjaAktywna = false;
 let policjaDane = null;
 let policjaPojazd = null, policjaSwiatlo = null;
 
-function wywolajPolicje(kod, tytul, wyjasnienie, kara, krytyczne, winowajca) {
+/* ============================================================
+   POLICJA TARANUJE — rzadkie, losowe zdarzenie: radiowóz wjeżdża
+   w auto gracza. Animacja: najazd, pył, wstrząs kamery — a potem
+   to samo okienko „czy to Twoja wina?”. Jeśli przyznasz się, dostajesz
+   punkty karne, a radiowóz po prostu odjeżdża. Jeśli nie — krata
+   spada na SAM radiowóz (ironia: policja aresztuje samą siebie).
+   ============================================================ */
+const pylKolizji = [];
+function stworzPyl(x, z) {
+  for (let k = 0; k < 6; k++) {
+    const mat = new THREE.MeshBasicMaterial({ color: 0xC9C5B8, transparent: true, opacity: 0.6 });
+    const m = new THREE.Mesh(new THREE.CircleGeometry(0.5, 10), mat);
+    m.rotation.x = -Math.PI / 2;
+    m.position.set(x + losuj(-0.6, 0.6), 0.3 + losuj(0, 0.6), z + losuj(-0.6, 0.6));
+    scena.add(m);
+    pylKolizji.push({ mesh: m, mat, t: 0, vx: losuj(-1.4, 1.4), vz: losuj(-1.4, 1.4) });
+  }
+}
+function aktualizujPyl(dt) {
+  for (let n = pylKolizji.length - 1; n >= 0; n--) {
+    const p = pylKolizji[n];
+    p.t += dt;
+    p.mesh.position.x += p.vx * dt; p.mesh.position.z += p.vz * dt; p.mesh.position.y += dt * 0.6;
+    p.mesh.scale.setScalar(1 + p.t * 2.2);
+    p.mat.opacity = Math.max(0, 0.6 - p.t * 0.5);
+    if (p.t > 1.2) { scena.remove(p.mesh); pylKolizji.splice(n, 1); }
+  }
+}
+
+let wstrzasKamery = 0;
+let policjaTaranAktywna = false;
+function sprawdzTaranPolicji(dt) {
+  if (!stanGry.aktywna || stanGry.policjaTaranWykonana || policjaAktywna || policjaTaranAktywna) return;
+  if (Math.abs(auto.v) < 2) return;
+  /* bardzo mała, losowa szansa — żeby zdarzenie było niespodzianką, a nie regułą */
+  if (Math.random() > 0.0009) return;
+  stanGry.policjaTaranWykonana = true;
+  policjaTaranAktywna = true;
+
+  const bok = Math.random() < 0.5 ? -1 : 1;
+  const startX = auto.x - Math.sin(auto.kier) * bok * 40 + Math.cos(auto.kier) * 10;
+  const startZ = auto.z + Math.cos(auto.kier) * bok * 40 + Math.sin(auto.kier) * 10;
+  const taran = zbudujAuto(0xF2F3F0, false);
+  taran.position.set(startX, 0, startZ);
+  const lampa = new THREE.Mesh(new THREE.BoxGeometry(0.95, 0.22, 0.42),
+    new THREE.MeshLambertMaterial({ color: 0xD8232A, emissive: 0xD8232A, emissiveIntensity: 1 }));
+  lampa.position.set(0, 1.9, -0.2);
+  taran.add(lampa);
+
+  const celX = auto.x, celZ = auto.z, t0 = performance.now();
+  const anim = () => {
+    const t = Math.min(1, (performance.now() - t0) / 480);
+    taran.position.x = lerp(startX, celX, t);
+    taran.position.z = lerp(startZ, celZ, t);
+    const kierJazdy = Math.atan2(celZ - startZ, celX - startX);
+    taran.rotation.y = -kierJazdy + Math.PI / 2;
+    if (t < 1) { requestAnimationFrame(anim); return; }
+    /* zderzenie */
+    stworzPyl(auto.x, auto.z);
+    wstrzasKamery = 0.35;
+    auto.v = 0;
+    auto.x += Math.cos(kierJazdy + Math.PI / 2) * bok * 2.6;
+    auto.z += Math.sin(kierJazdy + Math.PI / 2) * bok * 2.6;
+    policjaPojazd = taran; policjaSwiatlo = lampa.material;
+    policjaTaranAktywna = false;
+    wywolajPolicje('policja_taran', 'Radiowóz wjechał w Twoje auto',
+      'Patrol wykonywał manewr i uderzył w bok Twojego pojazdu. Nawet policja czasem popełnia błędy — teraz to funkcjonariusz musi wyjaśnić, co się stało.',
+      15, false, { x: taran.position.x, z: taran.position.z, mesh: taran, onAresztowanie: () => scena.remove(taran) },
+      { pomijSpawn: true, komunikatArt: 'Policjant wysiada z własnego radiowozu — kolega z patrolu zostaje zatrzymany za nieostrożną jazdę, a Ty jedziesz dalej bez punktów karnych.' });
+  };
+  anim();
+}
+
+/* ============================================================
+   POWTÓRKA BŁĘDU
+   Bufor ostatnich ~6 s pozycji auta. Odtwarzana tylko przy dwóch
+   najdotkliwszych zdarzeniach: zderzeniu z autem (nie ustąpiłeś
+   pierwszeństwa) i najechaniu przez tramwaj.
+   ============================================================ */
+const historiaAuta = [];
+function nagrajHistorie() {
+  const t = performance.now();
+  historiaAuta.push({ x: auto.x, z: auto.z, kier: auto.kier, t });
+  while (historiaAuta.length && t - historiaAuta[0].t > 6000) historiaAuta.shift();
+}
+function zrzutHistorii() { return historiaAuta.map(p => ({ x: p.x, z: p.z, kier: p.kier })); }
+function dopiszPowtorke(kod, replay) {
+  const b = stanGry.bledy.find(x => x.kod === kod);
+  if (b && !b.replay) b.replay = replay;
+}
+
+let powtorkaAktywna = false;
+function odtworzPowtorke(replay) {
+  if (!replay || !replay.length || powtorkaAktywna) return;
+  powtorkaAktywna = true;
+  document.getElementById('podsumowanie').classList.add('ukryty');
+  const duch = zbudujAuto(0xF7C948, false);
+  duch.traverse(o => { if (o.material) { o.material = o.material.clone(); o.material.transparent = true; o.material.opacity = 0.75; } });
+  let i = 0;
+  const krok = () => {
+    if (i >= replay.length) {
+      scena.remove(duch);
+      powtorkaAktywna = false;
+      document.getElementById('podsumowanie').classList.remove('ukryty');
+      return;
+    }
+    const p = replay[i];
+    duch.position.set(p.x, 0, p.z);
+    duch.rotation.y = -p.kier + Math.PI / 2;
+    kamera.position.set(p.x - Math.cos(p.kier) * 10, 6.5, p.z - Math.sin(p.kier) * 10);
+    kamera.lookAt(p.x, 1.2, p.z);
+    render.render(scena, kamera);
+    i += Math.max(1, Math.floor(replay.length / 90));   // odtwarzaj w ~1,5 s niezależnie od długości bufora
+    requestAnimationFrame(krok);
+  };
+  krok();
+}
+
+/* ============================================================
+   KARETKA — kilka pojazdów w ruchu drogowym dostaje niebieski kogut.
+   Jeśli jedzie tuż za Tobą i nie ustąpisz jej miejsca, to zwykłe
+   wykroczenie punktowe (bez interwencji policji — nikt tu nie ucierpiał).
+   ============================================================ */
+function ustawKaretki(aktywne) {
+  ruch.forEach(a => {
+    if (a.lampaKaretki && a.lampaKaretki.parent) a.mesh.remove(a.lampaKaretki.parent);
+    a.karetka = false; a.lampaKaretki = null;
+  });
+  if (!aktywne || !ruch.length) return;
+  const ile = Math.min(2, ruch.length);
+  const uzyte = new Set();
+  for (let k = 0; k < ile; k++) {
+    let a, proba = 0;
+    do { a = ruch[Math.floor(Math.random() * ruch.length)]; proba++; } while (uzyte.has(a) && proba < 20);
+    uzyte.add(a); a.karetka = true;
+    if (a.mesh.children[0] && a.mesh.children[0].material) a.mesh.children[0].material.color.setHex(0xF4F5F2);
+    const lampa = new THREE.Mesh(new THREE.BoxGeometry(0.9, 0.2, 0.4),
+      new THREE.MeshLambertMaterial({ color: 0x2563C9, emissive: 0x2563C9, emissiveIntensity: 1 }));
+    lampa.position.set(0, 1.85, -0.2);
+    a.mesh.add(lampa);
+    a.lampaKaretki = lampa.material;
+  }
+}
+
+/* ============================================================
+   TRAMWAJ — jeździ tam i z powrotem po ulicy Wolności (tory na jezdni).
+   Jeśli auto znajdzie się na torach w chwili przejazdu, wylatuje w
+   powietrze; ląduje, a na miejsce przyjeżdża policja z tym samym
+   pytaniem o winę. Aktywny tylko w misjach z flagą m.tram.
+   ============================================================ */
+let tramwaj = null;
+let lotAuta = null;   // {t, trwanie, sx, sz, dirX, dirZ, dokonczenie}
+
+function zbudujTramwaj() {
+  const g = new THREE.Group();
+  const mat = new THREE.MeshLambertMaterial({ color: 0xC9302A });
+  const matBiel = new THREE.MeshLambertMaterial({ color: 0xEDEAE0 });
+  const matOkno = new THREE.MeshLambertMaterial({ color: 0x9FD8E6 });
+  [-1, 1].forEach(seg => {
+    const pudlo = new THREE.Mesh(new THREE.BoxGeometry(7.2, 2.5, 2.3), mat);
+    pudlo.position.set(seg * 4.1, 1.45, 0); pudlo.castShadow = true; g.add(pudlo);
+    const pas = new THREE.Mesh(new THREE.BoxGeometry(7.2, 0.5, 2.32), matBiel);
+    pas.position.set(seg * 4.1, 0.7, 0); g.add(pas);
+    const ok = new THREE.Mesh(new THREE.BoxGeometry(6.3, 1.0, 2.32), matOkno);
+    ok.position.set(seg * 4.1, 1.9, 0); g.add(ok);
+  });
+  const lacznik = new THREE.Mesh(new THREE.BoxGeometry(1.4, 1.9, 1.9),
+    new THREE.MeshLambertMaterial({ color: 0x2A2E33 }));
+  lacznik.position.set(0, 1.3, 0); g.add(lacznik);
+  scena.add(g);
+  return g;
+}
+
+function ustawTramwaj(aktywny) {
+  if (tramwaj) { scena.remove(tramwaj.mesh); tramwaj = null; }
+  if (!aktywny) return;
+  const mesh = zbudujTramwaj();
+  const z = P(3);
+  mesh.position.set(-KRANIEC + 4, 0, z);
+  tramwaj = { mesh, x: -KRANIEC + 4, z, kier: 1, v: 9 };
+}
+
+function aktualizujTramwaj(dt) {
+  if (!tramwaj) return;
+  tramwaj.x += tramwaj.kier * tramwaj.v * dt;
+  if (tramwaj.x > KRANIEC - 4) tramwaj.kier = -1;
+  if (tramwaj.x < -KRANIEC + 4) tramwaj.kier = 1;
+  tramwaj.mesh.position.x = tramwaj.x;
+  tramwaj.mesh.rotation.y = tramwaj.kier > 0 ? 0 : Math.PI;
+}
+
+function rozpocznijLotAuta(dirX, dirZ, dokonczenie) {
+  lotAuta = { t: 0, trwanie: 1.5, sx: auto.x, sz: auto.z, dirX, dirZ, dokonczenie };
+}
+
+function sprawdzTramwaj(dt) {
+  if (!tramwaj || lotAuta || policjaAktywna) return;
+  if (Math.abs(auto.z - tramwaj.z) < 2.5 && Math.abs(auto.x - tramwaj.x) < 4.0) {
+    const kierLotu = tramwaj.kier;
+    stworzPyl(auto.x, auto.z);
+    wstrzasKamery = 0.55;
+    rozpocznijLotAuta(kierLotu * 0.6, losuj(-0.5, 0.5), () => {
+      spawnPolicje();
+      const kierowca = { x: tramwaj.x, z: tramwaj.z + 3.4, mesh: zbudujPieszego(0xE2E4E6) };
+      kierowca.mesh.position.set(kierowca.x, 0, kierowca.z);
+      kierowca.onAresztowanie = () => scena.remove(kierowca.mesh);
+      wywolajPolicje('tramwaj', 'Tramwaj najechał na Twoje auto',
+        'Stanąłeś na torowisku, gdy nadjeżdżał tramwaj — pojazd szynowy nie potrafi gwałtownie hamować ani ominąć przeszkody. Torowisko zawsze trzeba zostawiać wolne, nawet w korku.',
+        25, true, kierowca,
+        { replay: zrzutHistorii(), pomijSpawn: true,
+          komunikatArt: 'Motorniczy zostaje zatrzymany za brak ostrożności — a Ty jedziesz dalej bez punktów karnych.' });
+    });
+  }
+}
+
+function wywolajPolicje(kod, tytul, wyjasnienie, kara, krytyczne, winowajca, opcje) {
   if (policjaAktywna) return;
+  opcje = opcje || {};
   policjaAktywna = true;
-  policjaDane = { kod, tytul, wyjasnienie, kara, krytyczne, winowajca };
+  policjaDane = { kod, tytul, wyjasnienie, kara, krytyczne, winowajca, replay: opcje.replay, komunikatArt: opcje.komunikatArt };
   auto.v = 0;
-  spawnPolicje();
+  if (opcje.pomijSpawn) {
+    /* radiowóz już stoi na scenie (np. sam w nas wjechał) — nie duplikujemy */
+  } else {
+    spawnPolicje();
+  }
   document.getElementById('policjaOpis').textContent =
     tytul + '. Na miejsce podjechał patrol. ' + wyjasnienie + ' Czy to Twoja wina?';
   document.getElementById('policja').classList.remove('ukryty');
@@ -2829,12 +3120,18 @@ function aktualizujAresztowania(dt) {
       a.klatka.position.y += dt * 9;     // klatka unosi się i znika
       if (a.t > 1.5) {
         scena.remove(a.klatka); scena.remove(a.policjant);
-        const idx = ruch.indexOf(a.obiekt);
-        if (idx >= 0) {
-          scena.remove(a.obiekt.mesh); ruch.splice(idx, 1);
-          dodajAutoAI(Math.floor(losuj(0, NG)), Math.floor(losuj(0, NG)), Math.floor(losuj(0, 4)));
+        /* obiekty spoza tablic ruch[]/piesi[] (radiowóz taranujący, kierowca tramwaju)
+           same wiedzą, jak się posprzątać — przez własny callback */
+        if (a.obiekt.onAresztowanie) {
+          a.obiekt.onAresztowanie();
+        } else {
+          const idx = ruch.indexOf(a.obiekt);
+          if (idx >= 0) {
+            scena.remove(a.obiekt.mesh); ruch.splice(idx, 1);
+            dodajAutoAI(Math.floor(losuj(0, NG)), Math.floor(losuj(0, NG)), Math.floor(losuj(0, 4)));
+          }
+          if (piesi.indexOf(a.obiekt) >= 0) { a.obiekt.stan = 'czeka'; a.obiekt.czekaj = losuj(3, 8); }
         }
-        if (piesi.indexOf(a.obiekt) >= 0) { a.obiekt.stan = 'czeka'; a.obiekt.czekaj = losuj(3, 8); }
         aresztowania.splice(n, 1);
       }
     }
@@ -2857,15 +3154,29 @@ function kolizjaZKlatka() {
   return false;
 }
 
+/* wyspa ronda — fizyczna przeszkoda, którą trzeba objechać */
+function kolizjaZRondem() {
+  const r = swiat.rondo; if (!r) return false;
+  const dx = auto.x - r.x, dz = auto.z - r.z, dl = Math.hypot(dx, dz);
+  if (dl < r.promien + 1.4) {
+    const s = (r.promien + 1.4) / (dl || 1);
+    auto.x = r.x + dx * s; auto.z = r.z + dz * s;
+    auto.v *= -0.3;
+    return true;
+  }
+  return false;
+}
+
 function odpowiedzPolicji(przyznajeSie) {
   document.getElementById('policja').classList.add('ukryty');
   const d = policjaDane;
   if (przyznajeSie) {
     wykroczenie(d.kod, d.tytul, d.wyjasnienie, d.kara, d.krytyczne);
+    if (d.replay) dopiszPowtorke(d.kod, d.replay);
     usunPolicje();
   } else {
     rozpocznijAresztowanie(d.winowajca);
-    pochwala('Patrol wkracza', 'Policjant wysiada z radiowozu — winowajca zostaje zatrzymany, a Ty nie dostajesz punktów karnych.');
+    pochwala('Patrol wkracza', d.komunikatArt || 'Policjant wysiada z radiowozu — winowajca zostaje zatrzymany, a Ty nie dostajesz punktów karnych.');
     /* radiowóz zostaje na miejscu do czasu zakończenia zatrzymania */
     setTimeout(usunPolicje, 12000);
   }
@@ -2886,20 +3197,47 @@ function petla() {
   dt = Math.min(dt, 0.05);
 
   let kmh = auto.v * 3.6;
-  if (!policjaAktywna) {
+  if (lotAuta) {
+    lotAuta.t += dt;
+    const p = Math.min(1, lotAuta.t / lotAuta.trwanie);
+    const wys = Math.sin(p * Math.PI) * 6.5;
+    const nx = lotAuta.sx + lotAuta.dirX * p * 9, nz = lotAuta.sz + lotAuta.dirZ * p * 9;
+    auto.mesh.position.set(nx, wys, nz);
+    auto.mesh.rotation.x += dt * 6.5;
+    auto.mesh.rotation.z += dt * 4.5;
+    kamera.position.set(nx - lotAuta.dirX * 13, 8.5 + wys * 0.4, nz - lotAuta.dirZ * 13);
+    kamera.lookAt(nx, 1.4 + wys * 0.5, nz);
+    if (p >= 1) {
+      auto.x = nx; auto.z = nz; auto.v = 0;
+      auto.mesh.rotation.x = 0; auto.mesh.rotation.z = 0;
+      auto.mesh.position.set(auto.x, 0, auto.z);
+      const dokonczenie = lotAuta.dokonczenie;
+      lotAuta = null;
+      if (dokonczenie) dokonczenie();
+    }
+  } else if (!policjaAktywna) {
     kmh = fizykaAuta(dt);
     aktualizujSwiatla(dt);
     aktualizujRuch(dt);
     aktualizujPieszych(dt);
     aktualizujKamere(dt);
-    if (stanGry.aktywna) ocenJazde(dt, Math.abs(kmh));
+    if (stanGry.aktywna) { ocenJazde(dt, Math.abs(kmh)); nagrajHistorie(); sprawdzTaranPolicji(dt); sprawdzTramwaj(dt); }
     aktualizujAresztowania(dt);
     kolizjaZKlatka();
+    kolizjaZRondem();
     if (swiat.pierscien) swiat.pierscien.rotation.z += dt * 0.7;
+    if (wstrzasKamery > 0) {
+      kamera.position.x += losuj(-1, 1) * wstrzasKamery;
+      kamera.position.y += losuj(-1, 1) * wstrzasKamery * 0.5;
+      kamera.position.z += losuj(-1, 1) * wstrzasKamery;
+      wstrzasKamery = Math.max(0, wstrzasKamery - dt * 1.1);
+    }
   } else if (policjaSwiatlo) {
     /* światła radiowozu migają, nawet gdy świat stoi w miejscu */
     policjaSwiatlo.emissiveIntensity = 0.4 + Math.abs(Math.sin(teraz / 110)) * 1.3;
   }
+  aktualizujPyl(dt);
+  aktualizujTramwaj(dt);
 
   document.getElementById('predkoscVal').textContent = Math.round(Math.abs(kmh));
   document.getElementById('biegVal').textContent = auto.bieg;
