@@ -2984,14 +2984,14 @@ function sprawdzTramwaj(dt) {
     stworzPyl(auto.x, auto.z);
     wstrzasKamery = 0.55;
     rozpocznijLotAuta(kierLotu * 0.6, losuj(-0.5, 0.5), () => {
-      spawnPolicje();
       const kierowca = { x: tramwaj.x, z: tramwaj.z + 3.4, mesh: zbudujPieszego(0xE2E4E6) };
       kierowca.mesh.position.set(kierowca.x, 0, kierowca.z);
       kierowca.onAresztowanie = () => scena.remove(kierowca.mesh);
+      /* po lądowaniu radiowóz dopiero DOJEŻDŻA — okno z pytaniem czeka na koniec animacji */
       wywolajPolicje('tramwaj', 'Tramwaj najechał na Twoje auto',
         'Stanąłeś na torowisku, gdy nadjeżdżał tramwaj — pojazd szynowy nie potrafi gwałtownie hamować ani ominąć przeszkody. Torowisko zawsze trzeba zostawiać wolne, nawet w korku.',
         25, true, kierowca,
-        { replay: zrzutHistorii(), pomijSpawn: true,
+        { replay: zrzutHistorii(),
           komunikatArt: 'Motorniczy zostaje zatrzymany za brak ostrożności — a Ty jedziesz dalej bez punktów karnych.' });
     });
   }
@@ -3003,29 +3003,48 @@ function wywolajPolicje(kod, tytul, wyjasnienie, kara, krytyczne, winowajca, opc
   policjaAktywna = true;
   policjaDane = { kod, tytul, wyjasnienie, kara, krytyczne, winowajca, replay: opcje.replay, komunikatArt: opcje.komunikatArt };
   auto.v = 0;
+  const pokazOkno = () => {
+    document.getElementById('policjaOpis').textContent =
+      tytul + '. Na miejsce podjechał patrol. ' + wyjasnienie + ' Czy to Twoja wina?';
+    document.getElementById('policja').classList.remove('ukryty');
+  };
   if (opcje.pomijSpawn) {
     /* radiowóz już stoi na scenie (np. sam w nas wjechał) — nie duplikujemy */
+    pokazOkno();
   } else {
-    spawnPolicje();
+    spawnPolicje(pokazOkno);   // okno dialogowe pojawia się dopiero, gdy radiowóz dojedzie
   }
-  document.getElementById('policjaOpis').textContent =
-    tytul + '. Na miejsce podjechał patrol. ' + wyjasnienie + ' Czy to Twoja wina?';
-  document.getElementById('policja').classList.remove('ukryty');
 }
 
-function spawnPolicje() {
+/* radiowóz startuje z odległości i realnie dojeżdża do auta (ok. 0,7 s, z hamowaniem
+   pod koniec) zamiast pojawiać się od razu — to właśnie ta animacja podjazdu */
+function spawnPolicje(gotowe) {
   const bok = Math.random() < 0.5 ? -1 : 1;
   const bx = -Math.sin(auto.kier), bz = Math.cos(auto.kier);
-  const x = auto.x + bx * bok * 4.3 - Math.cos(auto.kier) * 5.5;
-  const z = auto.z + bz * bok * 4.3 - Math.sin(auto.kier) * 5.5;
+  const celX = auto.x + bx * bok * 4.3 - Math.cos(auto.kier) * 5.5;
+  const celZ = auto.z + bz * bok * 4.3 - Math.sin(auto.kier) * 5.5;
+  const startX = celX - Math.cos(auto.kier) * 30;
+  const startZ = celZ - Math.sin(auto.kier) * 30;
+
   policjaPojazd = zbudujAuto(0xF2F3F0, false);
-  policjaPojazd.position.set(x, 0, z);
+  policjaPojazd.position.set(startX, 0, startZ);
   policjaPojazd.rotation.y = -auto.kier + Math.PI / 2;
   const lampa = new THREE.Mesh(new THREE.BoxGeometry(0.95, 0.22, 0.42),
     new THREE.MeshLambertMaterial({ color: 0xD8232A, emissive: 0xD8232A, emissiveIntensity: 1 }));
   lampa.position.set(0, 1.9, -0.2);
   policjaPojazd.add(lampa);
   policjaSwiatlo = lampa.material;
+
+  const t0 = performance.now();
+  const jedz = () => {
+    const t = Math.min(1, (performance.now() - t0) / 700);
+    const e = 1 - Math.pow(1 - t, 3);   // zwalnia przy dojeździe, jak przy prawdziwym hamowaniu
+    policjaPojazd.position.x = lerp(startX, celX, e);
+    policjaPojazd.position.z = lerp(startZ, celZ, e);
+    if (t < 1) { requestAnimationFrame(jedz); return; }
+    if (gotowe) gotowe();
+  };
+  jedz();
 }
 function usunPolicje() {
   if (policjaPojazd) { scena.remove(policjaPojazd); policjaPojazd = null; policjaSwiatlo = null; }
