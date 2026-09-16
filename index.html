@@ -3282,6 +3282,11 @@ function budujListeMisji() {
     if (m.noc) { const p3 = document.createElement('span'); p3.className = 'plakietka'; p3.textContent = 'noc'; st.appendChild(p3); }
     if (m.typ === 'parking') { const p4 = document.createElement('span'); p4.className = 'plakietka'; p4.textContent = 'manewr'; st.appendChild(p4); }
     if (m.bezPodpowiedzi) { const p5 = document.createElement('span'); p5.className = 'plakietka trudnosc4'; p5.textContent = 'bez podpowiedzi'; st.appendChild(p5); }
+    if (m.tram) { const p6 = document.createElement('span'); p6.className = 'plakietka'; p6.textContent = '🚊 tramwaj'; st.appendChild(p6); }
+    if (m.karetka) { const p7 = document.createElement('span'); p7.className = 'plakietka'; p7.textContent = '🚑 karetka'; st.appendChild(p7); }
+    if (m.cele && m.cele.some(c => c.i === RONDO_I && c.j === RONDO_J)) {
+      const p8 = document.createElement('span'); p8.className = 'plakietka'; p8.textContent = '🔄 rondo'; st.appendChild(p8);
+    }
     b.onclick = () => startMisji(nr);
     box.appendChild(b);
   });
