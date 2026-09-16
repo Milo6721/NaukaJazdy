@@ -423,7 +423,7 @@ const PRIORYTET_POZ = [3];       // Wolności
 const PRIORYTET_PION = [3, 6];   // Główna + Wschodnia (droga szybkiego ruchu)
 /* ograniczenia prędkości */
 const LIMIT_POZ  = [50, 50, 30, 50, 50, 70, 50];
-const LIMIT_PION = [50, 30, 50, 50, 50, 50, 100];
+const LIMIT_PION = [50, 30, 50, 50, 50, 50, 130];
 const ULICA_SZYBKA = 6;          // indeks ulicy Wschodnia — D-9, 100 km/h, pierwszeństwo
 const RONDO_I = 4, RONDO_J = 4;  // skrzyżowanie zamienione na rondo (C-12 + A-7)
 /* ulica jednokierunkowa: pionowa nr 5, ruch tylko w stronę -z (na północ) */
@@ -1581,7 +1581,7 @@ addEventListener('keyup', e => {
   if (e.code === 'ArrowRight') KLAWISZE.prawo = false;
 });
 
-const MOC = 7.4;             // m/s² przyspieszenia
+const MOC = 8.8;             // m/s² przyspieszenia
 const HAMULEC = 13.5;        // m/s² hamowania
 const OPOR_TOCZ = 1.15;      // opór toczenia — auto samo zwalnia
 const OPOR_POW = 0.0055;     // opór powietrza (rośnie z kwadratem prędkości)
@@ -2475,6 +2475,7 @@ function startMisji(nr) {
     aresztowania = [];
   }
   historiaAuta.length = 0;
+  while (sladyOpon.length) scena.remove(sladyOpon.pop());
   stanGry.policjaTaranWykonana = false;
   policjaAktywna = false; policjaDane = null;
   document.getElementById('policja').classList.add('ukryty');
@@ -2792,12 +2793,13 @@ let policjaPojazd = null, policjaSwiatlo = null;
 const pylKolizji = [];
 function stworzPyl(x, z) {
   for (let k = 0; k < 6; k++) {
-    const mat = new THREE.MeshBasicMaterial({ color: 0xC9C5B8, transparent: true, opacity: 0.6 });
+    const opacity = 0.6;
+    const mat = new THREE.MeshBasicMaterial({ color: 0xC9C5B8, transparent: true, opacity });
     const m = new THREE.Mesh(new THREE.CircleGeometry(0.5, 10), mat);
     m.rotation.x = -Math.PI / 2;
     m.position.set(x + losuj(-0.6, 0.6), 0.3 + losuj(0, 0.6), z + losuj(-0.6, 0.6));
     scena.add(m);
-    pylKolizji.push({ mesh: m, mat, t: 0, vx: losuj(-1.4, 1.4), vz: losuj(-1.4, 1.4) });
+    pylKolizji.push({ mesh: m, mat, t: 0, vx: losuj(-1.4, 1.4), vz: losuj(-1.4, 1.4), startOpacity: opacity });
   }
 }
 function aktualizujPyl(dt) {
@@ -2806,13 +2808,74 @@ function aktualizujPyl(dt) {
     p.t += dt;
     p.mesh.position.x += p.vx * dt; p.mesh.position.z += p.vz * dt; p.mesh.position.y += dt * 0.6;
     p.mesh.scale.setScalar(1 + p.t * 2.2);
-    p.mat.opacity = Math.max(0, 0.6 - p.t * 0.5);
-    if (p.t > 1.2) { scena.remove(p.mesh); pylKolizji.splice(n, 1); }
+    p.mat.opacity = Math.max(0, p.startOpacity - p.t * (p.startOpacity / 1.4));
+    if (p.t > 1.6) { scena.remove(p.mesh); pylKolizji.splice(n, 1); }
+  }
+}
+
+/* większy, ciemniejszy wybuch dymu — do najmocniejszych zderzeń (tramwaj) */
+function stworzDymUderzenia(x, z) {
+  stworzPyl(x, z);
+  for (let k = 0; k < 8; k++) {
+    const opacity = 0.68;
+    const mat = new THREE.MeshBasicMaterial({ color: 0x35373B, transparent: true, opacity });
+    const m = new THREE.Mesh(new THREE.CircleGeometry(0.65, 10), mat);
+    m.rotation.x = -Math.PI / 2;
+    m.position.set(x + losuj(-1, 1), 0.4 + losuj(0, 1), z + losuj(-1, 1));
+    scena.add(m);
+    pylKolizji.push({ mesh: m, mat, t: 0, vx: losuj(-1.8, 1.8), vz: losuj(-1.8, 1.8), startOpacity: opacity });
   }
 }
 
 let wstrzasKamery = 0;
 let policjaTaranAktywna = false;
+
+/* ============================================================
+   DRIFTOWANIE — ostry skręt przy sporej prędkości zostawia ślady
+   opon na jezdni i lekki dym spod tylnych kół.
+   ============================================================ */
+const sladyOpon = [];
+let czasSladuDryft = 0, czasDymuDryft = 0;
+function polozenieKolTylnych() {
+  const F = [Math.cos(auto.kier), Math.sin(auto.kier)];
+  const R = [-Math.sin(auto.kier), Math.cos(auto.kier)];
+  const rcx = auto.x - F[0] * 1.42, rcz = auto.z - F[1] * 1.42;
+  return [
+    { x: rcx - R[0] * 0.94, z: rcz - R[1] * 0.94 },
+    { x: rcx + R[0] * 0.94, z: rcz + R[1] * 0.94 }
+  ];
+}
+function aktualizujDrift(dt) {
+  const driftuje = Math.abs(auto.skret) > 0.22 && Math.abs(auto.v) > 7.5 && (KLAWISZE.lewo || KLAWISZE.prawo);
+  if (!driftuje) { czasSladuDryft = 0; czasDymuDryft = 0; return; }
+  czasSladuDryft -= dt;
+  if (czasSladuDryft <= 0) {
+    czasSladuDryft = 0.045;
+    polozenieKolTylnych().forEach(k => {
+      const mat = new THREE.MeshBasicMaterial({ color: 0x141414, transparent: true, opacity: 0.5 });
+      const sl = new THREE.Mesh(new THREE.PlaneGeometry(0.3, 0.5), mat);
+      sl.rotation.x = -Math.PI / 2; sl.rotation.z = -auto.kier + Math.PI / 2;
+      sl.position.set(k.x, 0.022, k.z);
+      scena.add(sl);
+      sladyOpon.push(sl);
+      if (sladyOpon.length > 400) scena.remove(sladyOpon.shift());
+    });
+  }
+  czasDymuDryft -= dt;
+  if (czasDymuDryft <= 0) {
+    czasDymuDryft = 0.11;
+    polozenieKolTylnych().forEach(k => {
+      const opacity = 0.3;
+      const mat = new THREE.MeshBasicMaterial({ color: 0xCFCBC0, transparent: true, opacity });
+      const m = new THREE.Mesh(new THREE.CircleGeometry(0.3, 8), mat);
+      m.rotation.x = -Math.PI / 2;
+      m.position.set(k.x, 0.3, k.z);
+      scena.add(m);
+      pylKolizji.push({ mesh: m, mat, t: 0, vx: losuj(-0.35, 0.35), vz: losuj(-0.35, 0.35), startOpacity: opacity });
+    });
+  }
+}
+
 function sprawdzTaranPolicji(dt) {
   if (!stanGry.aktywna || stanGry.policjaTaranWykonana || policjaAktywna || policjaTaranAktywna) return;
   if (Math.abs(auto.v) < 2) return;
@@ -2939,18 +3002,66 @@ function zbudujTramwaj() {
   const g = new THREE.Group();
   const mat = new THREE.MeshLambertMaterial({ color: 0xC9302A });
   const matBiel = new THREE.MeshLambertMaterial({ color: 0xEDEAE0 });
-  const matOkno = new THREE.MeshLambertMaterial({ color: 0x9FD8E6 });
-  [-1, 1].forEach(seg => {
-    const pudlo = new THREE.Mesh(new THREE.BoxGeometry(7.2, 2.5, 2.3), mat);
-    pudlo.position.set(seg * 4.1, 1.45, 0); pudlo.castShadow = true; g.add(pudlo);
-    const pas = new THREE.Mesh(new THREE.BoxGeometry(7.2, 0.5, 2.32), matBiel);
-    pas.position.set(seg * 4.1, 0.7, 0); g.add(pas);
-    const ok = new THREE.Mesh(new THREE.BoxGeometry(6.3, 1.0, 2.32), matOkno);
-    ok.position.set(seg * 4.1, 1.9, 0); g.add(ok);
+  const matOkno = new THREE.MeshLambertMaterial({ color: 0x9FD8E6, transparent: true, opacity: 0.85 });
+  const matCzarny = new THREE.MeshLambertMaterial({ color: 0x1B1D20 });
+  const matSzary = new THREE.MeshLambertMaterial({ color: 0x565B62 });
+
+  /* trzy człony — środkowy niższy, z przegubem — jak w niskopodłogowym tramwaju */
+  const czlony = [-8.2, 0, 8.2];
+  czlony.forEach((x, idx) => {
+    const skrajny = idx !== 1;
+    const dl = skrajny ? 7.0 : 4.4;
+    const pudlo = new THREE.Mesh(new THREE.BoxGeometry(dl, 2.3, 2.3), mat);
+    pudlo.position.set(x, 1.5, 0); pudlo.castShadow = true; g.add(pudlo);
+    /* zaokrąglony, oszklony „nos” na skrajnych członach */
+    if (skrajny) {
+      const dziob = new THREE.Mesh(new THREE.CylinderGeometry(1.15, 1.15, 2.3, 12, 1, false, -Math.PI / 2, Math.PI),
+        matOkno);
+      dziob.rotation.z = Math.PI / 2; dziob.rotation.y = Math.PI / 2;
+      dziob.position.set(x + Math.sign(x) * dl / 2, 1.5, 0);
+      dziob.scale.set(0.55, 1, 1);
+      g.add(dziob);
+      const reflektor = new THREE.Mesh(new THREE.CircleGeometry(0.18, 8),
+        new THREE.MeshLambertMaterial({ color: 0xFFF6D8, emissive: 0xFFF0C0, emissiveIntensity: 0.5 }));
+      reflektor.position.set(x + Math.sign(x) * (dl / 2 + 0.05), 0.95, 0);
+      reflektor.rotation.y = Math.sign(x) > 0 ? -Math.PI / 2 : Math.PI / 2;
+      g.add(reflektor);
+    }
+    /* pas okien wzdłuż boku */
+    const ok = new THREE.Mesh(new THREE.BoxGeometry(dl - 0.6, 1.0, 2.32), matOkno);
+    ok.position.set(x, 1.85, 0); g.add(ok);
+    /* biały pas pod oknami — typowa kolorystyka MPK */
+    const pas = new THREE.Mesh(new THREE.BoxGeometry(dl - 0.2, 0.45, 2.34), matBiel);
+    pas.position.set(x, 0.95, 0); g.add(pas);
+    /* drzwi (ciemne pionowe pasy) */
+    if (skrajny) {
+      const drzwi = new THREE.Mesh(new THREE.BoxGeometry(0.5, 2.0, 2.36), matCzarny);
+      drzwi.position.set(x - Math.sign(x) * 1.4, 1.3, 0); g.add(drzwi);
+    }
+    /* wózek jezdny pod spodem */
+    const wozek = new THREE.Mesh(new THREE.BoxGeometry(1.6, 0.5, 2.0), matCzarny);
+    wozek.position.set(x, 0.35, 0); g.add(wozek);
   });
-  const lacznik = new THREE.Mesh(new THREE.BoxGeometry(1.4, 1.9, 1.9),
-    new THREE.MeshLambertMaterial({ color: 0x2A2E33 }));
-  lacznik.position.set(0, 1.3, 0); g.add(lacznik);
+
+  /* harmonijkowy przegub między członami */
+  [-4.1, 4.1].forEach(x => {
+    const miech = new THREE.Mesh(new THREE.CylinderGeometry(1.05, 1.05, 1.9, 10),
+      new THREE.MeshLambertMaterial({ color: 0x2A2E33 }));
+    miech.rotation.z = Math.PI / 2; miech.position.set(x, 1.45, 0); g.add(miech);
+  });
+
+  /* dach + pantograf */
+  czlony.forEach(x => {
+    const dach = new THREE.Mesh(new THREE.BoxGeometry(4.2, 0.18, 2.34), matSzary);
+    dach.position.set(x, 2.72, 0); g.add(dach);
+  });
+  const podstawaPant = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.15, 1.2), matCzarny);
+  podstawaPant.position.set(0, 2.85, 0); g.add(podstawaPant);
+  const ramiePant = new THREE.Mesh(new THREE.CylinderGeometry(0.04, 0.04, 1.3, 6), matCzarny);
+  ramiePant.rotation.x = Math.PI / 3.2; ramiePant.position.set(0, 3.35, -0.35); g.add(ramiePant);
+  const listwaPant = new THREE.Mesh(new THREE.BoxGeometry(1.5, 0.06, 0.1), matCzarny);
+  listwaPant.position.set(0, 3.9, -0.75); g.add(listwaPant);
+
   scena.add(g);
   return g;
 }
@@ -2973,16 +3084,24 @@ function aktualizujTramwaj(dt) {
   tramwaj.mesh.rotation.y = tramwaj.kier > 0 ? 0 : Math.PI;
 }
 
-function rozpocznijLotAuta(dirX, dirZ, dokonczenie) {
-  lotAuta = { t: 0, trwanie: 1.5, sx: auto.x, sz: auto.z, dirX, dirZ, dokonczenie };
+function rozpocznijLotAuta(dirX, dirZ, dokonczenie, opcje) {
+  opcje = opcje || {};
+  lotAuta = {
+    t: 0, trwanie: 1.5, sx: auto.x, sz: auto.z, dirX, dirZ, dokonczenie,
+    faza: opcje.wciaganie ? 'wciaganie' : 'lot',
+    celWciagniecia: opcje.celWciagniecia || null
+  };
 }
 
 function sprawdzTramwaj(dt) {
   if (!tramwaj || lotAuta || policjaAktywna) return;
-  if (Math.abs(auto.z - tramwaj.z) < 2.5 && Math.abs(auto.x - tramwaj.x) < 4.0) {
+  /* szerszy obszar wykrywania — dopasowany do pełnej, trzyczłonowej sylwetki tramwaju,
+     żeby zderzenie rejestrowało się wszędzie wzdłuż jego długości, nie tylko na środku */
+  if (Math.abs(auto.z - tramwaj.z) < 2.8 && Math.abs(auto.x - tramwaj.x) < 11.0) {
     const kierLotu = tramwaj.kier;
-    stworzPyl(auto.x, auto.z);
-    wstrzasKamery = 0.55;
+    stworzDymUderzenia(auto.x, auto.z);
+    wstrzasKamery = 0.6;
+    /* najpierw krótkie „wciągnięcie” pod tramwaj, dopiero potem wylot w powietrze */
     rozpocznijLotAuta(kierLotu * 0.6, losuj(-0.5, 0.5), () => {
       const kierowca = { x: tramwaj.x, z: tramwaj.z + 3.4, mesh: zbudujPieszego(0xE2E4E6) };
       kierowca.mesh.position.set(kierowca.x, 0, kierowca.z);
@@ -2993,7 +3112,7 @@ function sprawdzTramwaj(dt) {
         25, true, kierowca,
         { replay: zrzutHistorii(),
           komunikatArt: 'Motorniczy zostaje zatrzymany za brak ostrożności — a Ty jedziesz dalej bez punktów karnych.' });
-    });
+    }, { wciaganie: true, celWciagniecia: { x: tramwaj.x, z: tramwaj.z } });
   }
 }
 
@@ -3186,6 +3305,22 @@ function kolizjaZRondem() {
   return false;
 }
 
+/* zaparkowany radiowóz (np. ten, który zostaje na 12 s po odpowiedzi „nie moja wina”)
+   wcześniej nie miał żadnej kolizji, więc dało się przez niego przejeżdżać — poprawka */
+function kolizjaZPolicja() {
+  if (!policjaPojazd) return false;
+  const dx = auto.x - policjaPojazd.position.x, dz = auto.z - policjaPojazd.position.z;
+  const dl = Math.hypot(dx, dz);
+  if (dl < 2.9) {
+    const s = 2.9 / (dl || 1);
+    auto.x = policjaPojazd.position.x + dx * s;
+    auto.z = policjaPojazd.position.z + dz * s;
+    auto.v *= -0.2;
+    return true;
+  }
+  return false;
+}
+
 function odpowiedzPolicji(przyznajeSie) {
   document.getElementById('policja').classList.add('ukryty');
   const d = policjaDane;
@@ -3216,7 +3351,23 @@ function petla() {
   dt = Math.min(dt, 0.05);
 
   let kmh = auto.v * 3.6;
-  if (lotAuta) {
+  if (lotAuta && lotAuta.faza === 'wciaganie') {
+    /* krótka faza „wciągnięcia” pod tramwaj, zanim auto wystrzeli w powietrze */
+    lotAuta.t += dt;
+    const p = Math.min(1, lotAuta.t / 0.26);
+    const cx = lerp(lotAuta.sx, lotAuta.celWciagniecia.x, p * 0.5);
+    const cz = lerp(lotAuta.sz, lotAuta.celWciagniecia.z, p * 0.5);
+    auto.mesh.position.set(cx, 0, cz);
+    auto.mesh.rotation.y += dt * 3.2;
+    kamera.position.x += losuj(-1, 1) * 0.5;
+    kamera.position.z += losuj(-1, 1) * 0.5;
+    if (p >= 1) {
+      auto.x = cx; auto.z = cz;
+      auto.mesh.rotation.y = -auto.kier + Math.PI / 2;
+      stworzDymUderzenia(cx, cz);
+      lotAuta.faza = 'lot'; lotAuta.t = 0; lotAuta.sx = cx; lotAuta.sz = cz;
+    }
+  } else if (lotAuta) {
     lotAuta.t += dt;
     const p = Math.min(1, lotAuta.t / lotAuta.trwanie);
     const wys = Math.sin(p * Math.PI) * 6.5;
@@ -3240,10 +3391,11 @@ function petla() {
     aktualizujRuch(dt);
     aktualizujPieszych(dt);
     aktualizujKamere(dt);
-    if (stanGry.aktywna) { ocenJazde(dt, Math.abs(kmh)); nagrajHistorie(); sprawdzTaranPolicji(dt); sprawdzTramwaj(dt); }
+    if (stanGry.aktywna) { ocenJazde(dt, Math.abs(kmh)); nagrajHistorie(); sprawdzTaranPolicji(dt); sprawdzTramwaj(dt); aktualizujDrift(dt); }
     aktualizujAresztowania(dt);
     kolizjaZKlatka();
     kolizjaZRondem();
+    kolizjaZPolicja();
     if (swiat.pierscien) swiat.pierscien.rotation.z += dt * 0.7;
     if (wstrzasKamery > 0) {
       kamera.position.x += losuj(-1, 1) * wstrzasKamery;
