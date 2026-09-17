@@ -628,6 +628,23 @@ Z('B31', 'B-31', 'Pierwszeństwo dla nadjeżdżających z przeciwka', 'B',
   g => { tloKolo(g, R_CZER, R_BIAL, 30); strzalka(g, 128, 176, 90, Math.PI, 13, R_CZER);
     strzalka(g, 128, 90, 130, 0, 26, R_CZAR); });
 
+Z('A9', 'A-9', 'Przejazd kolejowy z zaporami', 'A',
+  'Zbliżasz się do przejazdu z opuszczanymi szlabanami. Gdy się opuszczają, migają czerwone światła albo słychać nadjeżdżający pociąg — nigdy nie wolno wtedy wjeżdżać na tory.',
+  g => { tloTrojkat(g); g.fillStyle = R_CZAR;
+    g.fillRect(70, 100, 14, 96); g.fillRect(172, 100, 14, 96);
+    g.save(); g.translate(77, 100); g.rotate(-0.5); g.fillRect(-6, -6, 130, 12); g.restore();
+    g.save(); g.translate(179, 100); g.rotate(0.5); g.fillRect(-124, -6, 130, 12); g.restore(); });
+
+Z('G3', 'G-3', 'Krzyż św. Andrzeja', 'G',
+  'Stoi bezpośrednio przy torach. To ostatnie ostrzeżenie: jeśli migają czerwone światła, opuszczają się zapory albo słychać pociąg — zatrzymaj się. Pociąg zawsze ma pierwszeństwo i nie jest w stanie ominąć przeszkody ani szybko się zatrzymać.',
+  g => { g.clearRect(0, 0, 256, 256);
+    g.strokeStyle = R_CZER; g.lineWidth = 26; g.lineCap = 'round';
+    g.beginPath(); g.moveTo(38, 38); g.lineTo(218, 218); g.stroke();
+    g.beginPath(); g.moveTo(218, 38); g.lineTo(38, 218); g.stroke();
+    g.strokeStyle = R_BIAL; g.lineWidth = 10;
+    g.beginPath(); g.moveTo(38, 38); g.lineTo(218, 218); g.stroke();
+    g.beginPath(); g.moveTo(218, 38); g.lineTo(38, 218); g.stroke(); });
+
 Z('A14', 'A-14', 'Roboty na drodze', 'A',
   'Prace drogowe. Spodziewaj się ludzi na jezdni, maszyn i zmienionej organizacji ruchu.',
   g => { tloTrojkat(g);
@@ -969,6 +986,7 @@ const GRUPY_ZNAKOW = [
   { kat: 'B', tytul: 'Znaki zakazu', wstep: 'Okrągłe, z czerwoną obwódką. Obowiązują od miejsca ustawienia — najczęściej do najbliższego skrzyżowania.' },
   { kat: 'C', tytul: 'Znaki nakazu', wstep: 'Niebieskie koła z białym symbolem. Wskazują jedyny dozwolony kierunek lub sposób jazdy.' },
   { kat: 'D', tytul: 'Znaki informacyjne', wstep: 'Niebieskie prostokąty i kwadraty. Informują o organizacji ruchu i obiektach przy drodze, a część z nich wprowadza konkretne obowiązki.' },
+  { kat: 'G', tytul: 'Znaki przed przejazdem kolejowym', wstep: 'Stawiane bezpośrednio przy torach. Pociąg ma zawsze pierwszeństwo i nie potrafi ani ominąć przeszkody, ani szybko się zatrzymać.' },
   { kat: 'T', tytul: 'Tabliczki do znaków', wstep: 'Same nic nie znaczą — zmieniają lub uściślają znaczenie znaku, pod którym wiszą.' }
 ];
 /* ============================================================
@@ -1172,6 +1190,8 @@ function budujMiasto() {
   budujSlepaUliczke(G);
   budujSzpalerLesny(G);
   budujRozdwojenie(G, 2, 2, 3);
+  budujToryKolejowe(G);
+  budujPrzejazd(G);
   swiat.grupaTrasa = new THREE.Group(); scena.add(swiat.grupaTrasa);
 }
 
@@ -1219,6 +1239,8 @@ function budujKwartal(G, cx, cz, bok, i, j) {
   if (i === 5 && j === 0) { budujStacjePaliw(G, cx, cz, wolny); return; }
   /* leśna ulica — całe pasmo kwartałów wzdłuż Brzozowej (j=6) to gęsty las, nie zabudowa */
   if (j === 5 && i >= 1 && i <= 4) { budujLas(G, cx, cz, wolny); return; }
+  /* nasyp kolejowy — otwarty pas, przez który biegną tory do przejazdu na ulicy Targowej */
+  if (i === 1 && (j === 3 || j === 4)) { budujNasypKolejowy(G, cx, cz, wolny); return; }
   const seed = (i * 13 + j * 7) % 5;
   if (seed === 4) {
     const traw = new THREE.Mesh(new THREE.PlaneGeometry(wolny, wolny),
@@ -1289,6 +1311,15 @@ function budujLas(G, cx, cz, wolny) {
   }
 }
 
+/* nasyp kolejowy — otwarta trawiasta skarpa, przez środek której biegną tory */
+function budujNasypKolejowy(G, cx, cz, wolny) {
+  const podloze = new THREE.Mesh(new THREE.PlaneGeometry(wolny, wolny),
+    new THREE.MeshLambertMaterial({ color: 0x4A5D3A }));
+  podloze.rotation.x = -Math.PI / 2; podloze.position.set(cx, 0.32, cz); podloze.receiveShadow = true; G.add(podloze);
+  for (let k = 0; k < 5; k++)
+    drzewo(G, cx + (k % 2 ? 1 : -1) * losuj(wolny * 0.28, wolny * 0.46), cz + losuj(-wolny / 2.3, wolny / 2.3));
+}
+
 /* dodatkowy szpaler drzew tuż przy jezdni Brzozowej — żeby las było widać
    już z samochodu, nie tylko w oddali między budynkami */
 function budujSzpalerLesny(G) {
@@ -1322,6 +1353,86 @@ function budujRozdwojenie(G, i0, jOd, jDo) {
     krzak.position.set(x, 0.72, cz + t * dlugosc / 2); krzak.scale.y = 0.7; G.add(krzak);
   }
   swiat.budynki.push({ x, z: cz, w: promien * 2, d: dlugosc });
+}
+
+/* ============================================================
+   PRZEJAZD KOLEJOWY — tory krzyżujące ulicę Targową (j=4) w miejscu
+   x = X_TOR. Nasyp po obu stronach (kwartały i=1,j=3/4) zbudowany
+   wcześniej w budujKwartal. Sama animacja pociągu i szlabanów jest
+   w 04-gra.js (aktualizujPociag) — tu tylko geometria statyczna.
+   ============================================================ */
+const X_TOR = (P(1) + P(2)) / 2;
+function budujToryKolejowe(G) {
+  const z0 = P(3) - SP * 0.42, z1 = P(5) + SP * 0.42;
+  const dl = z1 - z0, cz = (z0 + z1) / 2;
+  const podsypka = new THREE.Mesh(new THREE.BoxGeometry(3.4, 0.3, dl),
+    new THREE.MeshLambertMaterial({ color: 0x6B655A }));
+  podsypka.position.set(X_TOR, 0.15, cz); podsypka.receiveShadow = true; G.add(podsypka);
+  const matPodklad = new THREE.MeshLambertMaterial({ color: 0x4A3B2A });
+  for (let z = z0; z <= z1; z += 1.25) {
+    const podklad = new THREE.Mesh(new THREE.BoxGeometry(2.6, 0.12, 0.5), matPodklad);
+    podklad.position.set(X_TOR, 0.26, z); G.add(podklad);
+  }
+  const matSzyna = new THREE.MeshLambertMaterial({ color: 0x3A3A3C });
+  [-0.75, 0.75].forEach(off => {
+    const szyna = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.16, dl), matSzyna);
+    szyna.position.set(X_TOR + off, 0.38, cz); G.add(szyna);
+  });
+}
+
+/* opuszczany szlaban — pivot.rotation.x steruje kątem: -PI/2 = podniesiony
+   (wolny przejazd), 0 = opuszczony poziomo w poprzek jezdni */
+function zbudujSzlaban(znakPo) {
+  const grupa = new THREE.Group();
+  const slup = new THREE.Mesh(new THREE.CylinderGeometry(0.13, 0.16, 2.1, 8),
+    new THREE.MeshLambertMaterial({ color: 0xD8232A }));
+  slup.position.y = 1.05; slup.castShadow = true; grupa.add(slup);
+  const pivot = new THREE.Group(); pivot.position.y = 2.05; grupa.add(pivot);
+  const dlBoom = POL_HALF * 2 * 0.56;
+  const boom = new THREE.Mesh(new THREE.BoxGeometry(0.13, 0.13, dlBoom),
+    new THREE.MeshLambertMaterial({ color: 0xF2F2E8 }));
+  boom.position.z = znakPo * dlBoom / 2; pivot.add(boom);
+  const matPasek = new THREE.MeshBasicMaterial({ color: 0xD8232A });
+  for (let k = 0; k < 4; k++) {
+    const pasek = new THREE.Mesh(new THREE.BoxGeometry(0.15, 0.15, dlBoom / 9), matPasek);
+    pasek.position.z = znakPo * (0.15 + k * dlBoom / 4.4);
+    pivot.add(pasek);
+  }
+  pivot.rotation.x = -Math.PI / 2;
+  return { grupa, pivot };
+}
+
+function budujPrzejazd(G) {
+  swiat.przejazd = { x: X_TOR, z: P(4), szlabany: [], lampy: [] };
+  /* szlabany po obu stronach ulicy — jeden blokuje wschodni, drugi zachodni kierunek */
+  const szlabanDane = [
+    { ox: -1, znakPo: 1, zSlupka: P(4) - (POL_HALF + 0.6) },   // słupek zachodni, ramię opada w stronę +Z (przez jezdnię)
+    { ox: 1, znakPo: -1, zSlupka: P(4) + (POL_HALF + 0.6) }    // słupek wschodni, ramię opada w stronę -Z
+  ];
+  szlabanDane.forEach(sd => {
+    const sz = zbudujSzlaban(sd.znakPo);
+    sz.grupa.position.set(X_TOR + sd.ox * 5.5, 0, sd.zSlupka);
+    G.add(sz.grupa);
+    swiat.przejazd.szlabany.push(sz);
+  });
+  /* sygnalizacja migowa + krzyż św. Andrzeja przy samych torach */
+  [-1, 1].forEach(strona => {
+    const slup = new THREE.Mesh(new THREE.CylinderGeometry(0.1, 0.12, 2.6, 8),
+      new THREE.MeshLambertMaterial({ color: 0xD8D8D0 }));
+    slup.position.set(X_TOR + strona * 2.4, 1.3, P(4) + POL_HALF + 1.6); G.add(slup);
+    const lampy = [];
+    [0.35, -0.35].forEach(off => {
+      const mat = new THREE.MeshLambertMaterial({ color: 0x3A1012, emissive: 0xD8232A, emissiveIntensity: 0.15 });
+      const lampa = new THREE.Mesh(new THREE.CircleGeometry(0.13, 10), mat);
+      lampa.position.set(X_TOR + strona * (2.4 + off), 2.5, P(4) + POL_HALF + 1.61);
+      G.add(lampa); lampy.push(mat);
+    });
+    swiat.przejazd.lampy.push(...lampy);
+    postawZnak(G, 'G3', X_TOR + strona * 2.4, P(4) + POL_HALF + 3.4, dirKat(0), null, 1.05);
+  });
+  /* znaki A-9 z wyprzedzeniem, po obu stronach ruchu na Targowej */
+  znakPrzedZwezeniem(G, 'A9', X_TOR, P(4), 0, 20);
+  znakPrzedZwezeniem(G, 'A9', X_TOR, P(4), 2, 20);
 }
 
 function postawBudynek(G, x, z, w, d, h) {
@@ -1442,6 +1553,78 @@ function budujStrefyZwezen(G) {
   budujStrefeZwezenia(G, P(1), (P(3) + P(4)) / 2, 20, 1);
   /* ulica Targowa (j=5) — zablokowany pas jadących na zachód */
   budujStrefeZwezenia(G, (P(3) + P(4)) / 2, P(5), 18, 2);
+  /* ulica Akacjowa (j=1) — prawdziwe roboty drogowe, zablokowany pas jadących na wschód */
+  budujRobotyDrogowe(G, (P(4) + P(5)) / 2, P(1), 20, 0);
+}
+
+/* ---------- roboty drogowe (A-14) ----------
+   Ta sama zasada co przy zwężeniu (jeden pas zablokowany, D-5/B-31 rozstrzyga
+   pierwszeństwo), ale inna dekoracja: taśma budowlana, koparka, pracownicy. */
+function budujRobotyDrogowe(G, cx, cz, dlugosc, kierBlokowany) {
+  const poziomo = (kierBlokowany === 0 || kierBlokowany === 2);
+  const [dx, dz] = DIRV[kierBlokowany];
+  const blokPas = poziomo ? (dx > 0 ? PAS : -PAS) : (dz > 0 ? -PAS : PAS);
+  const bx = poziomo ? cx : cx + blokPas;
+  const bz = poziomo ? cz + blokPas : cz;
+
+  const matSlupek = new THREE.MeshLambertMaterial({ color: 0xE8862A });
+  const matTasma = new THREE.MeshBasicMaterial({ color: 0xF7C948, side: THREE.DoubleSide });
+  const ileSlupkow = Math.max(3, Math.round(dlugosc / 5));
+  const punkty = [];
+  for (let k = 0; k < ileSlupkow; k++) {
+    const t = (k / (ileSlupkow - 1) - 0.5) * dlugosc;
+    const slupek = new THREE.Mesh(new THREE.CylinderGeometry(0.08, 0.08, 1.0, 6), matSlupek);
+    const px = poziomo ? bx + t : bx, pz = poziomo ? bz : bz + t;
+    slupek.position.set(px, 0.5, pz); G.add(slupek);
+    punkty.push([px, pz]);
+  }
+  for (let k = 0; k < punkty.length - 1; k++) {
+    const [x1, z1] = punkty[k], [x2, z2] = punkty[k + 1];
+    const dlOdc = Math.hypot(x2 - x1, z2 - z1);
+    const tasma = new THREE.Mesh(new THREE.PlaneGeometry(dlOdc, 0.3), matTasma);
+    tasma.position.set((x1 + x2) / 2, 0.85, (z1 + z2) / 2);
+    tasma.rotation.y = Math.atan2(x2 - x1, z2 - z1);
+    G.add(tasma);
+  }
+  swiat.budynki.push({ x: bx, z: bz, w: poziomo ? dlugosc : 1.6, d: poziomo ? 1.6 : dlugosc });
+
+  /* koparka */
+  const kx = bx + (poziomo ? -dlugosc * 0.15 : (dx !== 0 ? 1.6 : 0));
+  const kz = bz + (poziomo ? (dz !== 0 ? 0 : 1.6) : -dlugosc * 0.15);
+  budujKoparke(G, kx, kz);
+  /* pracownicy w kamizelkach */
+  ludzikRoboczy(G, bx + losuj(-dlugosc * 0.25, dlugosc * 0.25), bz + 1.4);
+  ludzikRoboczy(G, bx + losuj(-dlugosc * 0.25, dlugosc * 0.25), bz - 1.4);
+
+  const priorytet = (kierBlokowany + 2) % 4;
+  const polDl = dlugosc / 2;
+  znakPrzedZwezeniem(G, 'A14', cx, cz, kierBlokowany, polDl + 20);
+  znakPrzedZwezeniem(G, 'A14', cx, cz, priorytet, polDl + 20);
+  znakPrzedZwezeniem(G, 'B31', cx, cz, kierBlokowany, polDl + 6);
+  znakPrzedZwezeniem(G, 'D5', cx, cz, priorytet, polDl + 6);
+}
+
+function budujKoparke(G, x, z) {
+  const matZolty = new THREE.MeshLambertMaterial({ color: 0xF7C948 });
+  const matCzarny = new THREE.MeshLambertMaterial({ color: 0x1F2124 });
+  const gasienice = new THREE.Mesh(new THREE.BoxGeometry(2.4, 0.5, 1.7), matCzarny);
+  gasienice.position.set(x, 0.5, z); gasienice.castShadow = true; G.add(gasienice);
+  const kabina = new THREE.Mesh(new THREE.BoxGeometry(1.5, 1.1, 1.5), matZolty);
+  kabina.position.set(x, 1.5, z); kabina.castShadow = true; G.add(kabina);
+  const ramie1 = new THREE.Mesh(new THREE.BoxGeometry(0.28, 1.9, 0.28), matZolty);
+  ramie1.position.set(x + 0.7, 2.3, z); ramie1.rotation.z = -0.6; G.add(ramie1);
+  const ramie2 = new THREE.Mesh(new THREE.BoxGeometry(0.22, 1.5, 0.22), matZolty);
+  ramie2.position.set(x + 1.7, 1.7, z); ramie2.rotation.z = 0.9; G.add(ramie2);
+  const lyzka = new THREE.Mesh(new THREE.BoxGeometry(0.6, 0.5, 0.7), matCzarny);
+  lyzka.position.set(x + 2.2, 0.9, z); G.add(lyzka);
+}
+function ludzikRoboczy(G, x, z) {
+  const p = zbudujPieszego(0xF7C948);
+  p.position.set(x, 0, z);
+  const helm = new THREE.Mesh(new THREE.SphereGeometry(0.13, 8, 6),
+    new THREE.MeshLambertMaterial({ color: 0xE8862A }));
+  helm.position.set(0, 1.75, 0); p.add(helm);
+  return p;
 }
 
 /* znaki dowiązane wprost do konkretnych budynków, żeby nie polegać wyłącznie
@@ -2615,7 +2798,14 @@ const MISJE = [
       'Masz pierwszeństwo na każdym skrzyżowaniu wzdłuż tej ulicy, ale zachowaj ograniczone zaufanie — ktoś może się pomylić.',
       'Hamowanie z wysokiej prędkości zaczynaj dużo wcześniej niż zwykle — droga hamowania rośnie z kwadratem prędkości.'] },
 
-  { nazwa: 'Egzamin państwowy', trudnosc: 4, ruch: 36, piesi: 18, bezPodpowiedzi: true, prog: 80, tram: true, karetka: true,
+  { nazwa: 'Przejazd kolejowy', trudnosc: 3, ruch: 18, piesi: 8, kolej: true,
+    opis: 'Ulica Targowa krzyżuje się z torami kolejowymi. Naucz się czytać znak A-9 i krzyż św. Andrzeja — i nigdy nie wjeżdżaj na tory, gdy migają czerwone światła albo opuszczają się szlabany.',
+    start: { i: 0, j: 4, d: 0 }, cele: [{ i: 3, j: 4 }, { i: 6, j: 1 }],
+    wskazowki: ['Znak A-9 uprzedza o przejeździe z zaporami — zwolnij już na jego widok.',
+      'Krzyż św. Andrzeja stoi tuż przy torach. Migające czerwone światła albo opadające szlabany oznaczają bezwzględny zakaz wjazdu.',
+      'Pociąg nie potrafi ominąć przeszkody ani szybko zahamować — jeśli utkniesz na torach, konsekwencje są nieodwracalne.'] },
+
+  { nazwa: 'Egzamin państwowy', trudnosc: 4, ruch: 36, piesi: 18, bezPodpowiedzi: true, prog: 80, tram: true, karetka: true, kolej: true,
     opis: 'Brak podpowiedzi, pełny ruch, wymagane 80 punktów. Egzaminator nie powie Ci, co masz zrobić — musisz wiedzieć sam.',
     start: { i: 0, j: 6, d: 0 }, cele: [{ i: 3, j: 6 }, { i: 3, j: 0 }, { i: 6, j: 0 }],
     wskazowki: ['Instruktor milczy. Wszystkie decyzje podejmujesz na podstawie znaków i sytuacji.',
@@ -2711,6 +2901,9 @@ function startMisji(nr) {
   stworzRuch(m.ruch); stworzPieszych(m.piesi);
   ustawTramwaj(!!m.tram);
   ustawKaretki(!!m.karetka);
+  ustawPociag(!!m.kolej);
+  stanGry.pociagUderzyl = false;
+  auto.mesh.scale.set(1, 1, 1); auto.mesh.position.y = 0; auto.mesh.rotation.set(0, auto.mesh.rotation.y, 0);
   ustawPore(!!m.noc);
   if (auto.mesh.userData.reflektor) auto.mesh.userData.reflektor.intensity = m.noc ? 2.6 : 0;
 
@@ -3213,6 +3406,102 @@ function ustawKaretki(aktywne) {
 }
 
 /* ============================================================
+   POCIĄG — kursuje po torach krzyżujących ulicę Targową. Gdy się zbliża,
+   szlabany opadają i migają czerwone światła (patrz swiat.przejazd,
+   zbudowane w 02b-miasto.js). Jeśli auto stoi na torach w chwili
+   przejazdu — zostaje zgniecione, a misja kończy się automatycznie.
+   To jedyne zdarzenie bez interwencji policji: oczywista wina kierowcy.
+   ============================================================ */
+let pociag = null;
+let barieraStan = 0;
+
+function zbudujPociag() {
+  const g = new THREE.Group();
+  const matLoko = new THREE.MeshLambertMaterial({ color: 0x2E4A6B });
+  const matWagon = new THREE.MeshLambertMaterial({ color: 0xB9BEC4 });
+  const matSzyba = new THREE.MeshLambertMaterial({ color: 0x1E2933 });
+  [{ dz: -14, mat: matLoko, h: 3.3 }, { dz: -2, mat: matWagon, h: 2.9 }, { dz: 8, mat: matWagon, h: 2.9 }]
+    .forEach(s => {
+      const bryla = new THREE.Mesh(new THREE.BoxGeometry(2.7, s.h, 9.4), s.mat);
+      bryla.position.set(0, s.h / 2, s.dz); bryla.castShadow = true; g.add(bryla);
+      if (s.mat === matWagon) {
+        const pas = new THREE.Mesh(new THREE.BoxGeometry(2.72, 0.9, 8.8), matSzyba);
+        pas.position.set(0, s.h * 0.62, s.dz); g.add(pas);
+      }
+    });
+  const reflektor = new THREE.Mesh(new THREE.CircleGeometry(0.22, 8),
+    new THREE.MeshLambertMaterial({ color: 0xFFF6D8, emissive: 0xFFF0C0, emissiveIntensity: 0.6 }));
+  reflektor.position.set(0, 1.1, -18.5); g.add(reflektor);
+  scena.add(g);
+  return g;
+}
+
+function ustawPociag(aktywny) {
+  if (pociag) { scena.remove(pociag.mesh); pociag = null; }
+  barieraStan = 0;
+  if (swiat.przejazd) {
+    swiat.przejazd.szlabany.forEach(sz => { sz.pivot.rotation.x = -Math.PI / 2; });
+    swiat.przejazd.lampy.forEach(mat => { mat.emissiveIntensity = 0.15; mat.color.setHex(0x3A1012); });
+  }
+  if (!aktywny) return;
+  const mesh = zbudujPociag();
+  mesh.position.set(X_TOR, 0, -KRANIEC + 15);
+  pociag = { mesh, z: -KRANIEC + 15, kier: 1, v: 15 };
+}
+
+function aktualizujPociag(dt) {
+  if (!pociag || !swiat.przejazd) return;
+  pociag.z += pociag.kier * pociag.v * dt;
+  if (pociag.z > KRANIEC - 15) pociag.kier = -1;
+  if (pociag.z < -KRANIEC + 15) pociag.kier = 1;
+  pociag.mesh.position.z = pociag.z;
+  pociag.mesh.rotation.y = pociag.kier > 0 ? 0 : Math.PI;
+
+  const pz = swiat.przejazd.z;
+  const zblizaSie = (pociag.kier > 0 && pociag.z < pz - 2) || (pociag.kier < 0 && pociag.z > pz + 2);
+  const naPrzejezdzie = Math.abs(pociag.z - pz) < 16;
+  const cel = ((zblizaSie && Math.abs(pociag.z - pz) < 55) || naPrzejezdzie) ? 1 : 0;
+  barieraStan += Math.sign(cel - barieraStan) * dt / (cel ? 1.4 : 1.1);
+  barieraStan = kl(barieraStan, 0, 1);
+  swiat.przejazd.szlabany.forEach(sz => { sz.pivot.rotation.x = lerp(-Math.PI / 2, 0, barieraStan); });
+  const mig = Math.sin(performance.now() / 130) > 0;
+  swiat.przejazd.lampy.forEach(mat => {
+    const on = barieraStan > 0.05 && mig;
+    mat.emissiveIntensity = on ? 1.3 : 0.15;
+    mat.color.setHex(on ? 0xD8232A : 0x3A1012);
+  });
+}
+
+function sprawdzPrzejazdKolejowy() {
+  if (!pociag || stanGry.pociagUderzyl) return;
+  const dx = Math.abs(auto.x - X_TOR), dz = Math.abs(auto.z - pociag.z);
+  if (dx < 3.0 && dz < 4.6) zgnieceAuto();
+}
+
+function zgnieceAuto() {
+  stanGry.pociagUderzyl = true;
+  policjaAktywna = true;   // zamraża resztę symulacji tak jak interwencja policji
+  auto.v = 0;
+  stworzDymUderzenia(auto.x, auto.z);
+  wstrzasKamery = 0.9;
+  const t0 = performance.now();
+  const zgniot = () => {
+    const t = Math.min(1, (performance.now() - t0) / 900);
+    const s = Math.max(0.1, 1 - t * 0.82);
+    auto.mesh.scale.set(1 + t * 0.35, s, 1 + t * 0.15);
+    auto.mesh.position.y = -(1 - s) * 0.32;
+    kamera.position.set(auto.x + 8, 4.5, auto.z + 8);
+    kamera.lookAt(auto.x, 0.3, auto.z);
+    if (t < 1) { requestAnimationFrame(zgniot); return; }
+    setTimeout(() => {
+      podpowiedz('Nie zdałeś', 'Wjazd na tory przy opuszczonych szlabanach to jedno z najcięższych wykroczeń — pociąg nie mógł ani zahamować, ani ominąć przeszkody.');
+      setTimeout(() => zakonczMisje(false), 900);
+    }, 700);
+  };
+  zgniot();
+}
+
+/* ============================================================
    TRAMWAJ — jeździ tam i z powrotem po ulicy Wolności (tory na jezdni).
    Jeśli auto znajdzie się na torach w chwili przejazdu, wylatuje w
    powietrze; ląduje, a na miejsce przyjeżdża policja z tym samym
@@ -3614,7 +3903,7 @@ function petla() {
     aktualizujRuch(dt);
     aktualizujPieszych(dt);
     aktualizujKamere(dt);
-    if (stanGry.aktywna) { ocenJazde(dt, Math.abs(kmh)); nagrajHistorie(); sprawdzTaranPolicji(dt); sprawdzTramwaj(dt); aktualizujDrift(dt); }
+    if (stanGry.aktywna) { ocenJazde(dt, Math.abs(kmh)); nagrajHistorie(); sprawdzTaranPolicji(dt); sprawdzTramwaj(dt); sprawdzPrzejazdKolejowy(); aktualizujDrift(dt); }
     aktualizujAresztowania(dt);
     kolizjaZKlatka();
     kolizjaZRondem();
@@ -3632,6 +3921,7 @@ function petla() {
   }
   aktualizujPyl(dt);
   aktualizujTramwaj(dt);
+  aktualizujPociag(dt);
 
   document.getElementById('predkoscVal').textContent = Math.round(Math.abs(kmh));
   document.getElementById('biegVal').textContent = auto.bieg;
