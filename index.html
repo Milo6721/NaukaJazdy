@@ -2904,6 +2904,10 @@ function startMisji(nr) {
   ustawPociag(!!m.kolej);
   stanGry.pociagUderzyl = false;
   auto.mesh.scale.set(1, 1, 1); auto.mesh.position.y = 0; auto.mesh.rotation.set(0, auto.mesh.rotation.y, 0);
+  /* zdejmij wgniecenia doczepione do karoserii w poprzedniej misji, jeśli auto się rozbiło */
+  while (auto.mesh.children.length > auto.mesh.userData.liczbaOryginalnychCzesci)
+    auto.mesh.remove(auto.mesh.children[auto.mesh.children.length - 1]);
+  if (typeof usunEfektyZderzenia === 'function') usunEfektyZderzenia();
   ustawPore(!!m.noc);
   if (auto.mesh.userData.reflektor) auto.mesh.userData.reflektor.intensity = m.noc ? 2.6 : 0;
 
@@ -3222,10 +3226,13 @@ function aktualizujPyl(dt) {
   for (let n = pylKolizji.length - 1; n >= 0; n--) {
     const p = pylKolizji[n];
     p.t += dt;
-    p.mesh.position.x += p.vx * dt; p.mesh.position.z += p.vz * dt; p.mesh.position.y += dt * 0.6;
-    p.mesh.scale.setScalar(1 + p.t * 2.2);
-    p.mat.opacity = Math.max(0, p.startOpacity - p.t * (p.startOpacity / 1.4));
-    if (p.t > 1.6) { scena.remove(p.mesh); pylKolizji.splice(n, 1); }
+    const wznoszenie = p.wznoszenie !== undefined ? p.wznoszenie : 0.6;
+    const wzrost = p.wzrost !== undefined ? p.wzrost : 2.2;
+    const zycie = p.zycie !== undefined ? p.zycie : 1.6;
+    p.mesh.position.x += p.vx * dt; p.mesh.position.z += p.vz * dt; p.mesh.position.y += dt * wznoszenie;
+    p.mesh.scale.setScalar(1 + p.t * wzrost);
+    p.mat.opacity = Math.max(0, p.startOpacity - p.t * (p.startOpacity / zycie));
+    if (p.t > zycie) { scena.remove(p.mesh); pylKolizji.splice(n, 1); }
   }
 }
 
@@ -3478,27 +3485,146 @@ function sprawdzPrzejazdKolejowy() {
   if (dx < 3.0 && dz < 4.6) zgnieceAuto();
 }
 
+/* skutki wypadku (wgniecenia, lusterko, ślad, płomienie) trzymamy w jednej
+   liście, żeby na pewno posprzątać scenę przy starcie kolejnej lekcji */
+let efektyZderzenia = [];
+function usunEfektyZderzenia() {
+  efektyZderzenia.forEach(o => { if (o.parent) o.parent.remove(o); else scena.remove(o); });
+  efektyZderzenia = [];
+}
+
+function odlecLusterko(x, z, kier) {
+  const lusterko = new THREE.Mesh(new THREE.BoxGeometry(0.22, 0.16, 0.09),
+    new THREE.MeshLambertMaterial({ color: 0x1E2933 }));
+  const bok = Math.random() < 0.5 ? -1 : 1;
+  const sx = x - Math.sin(kier) * bok * 1.0 + Math.cos(kier) * 0.3;
+  const sz = z + Math.cos(kier) * bok * 1.0 + Math.sin(kier) * 0.3;
+  lusterko.position.set(sx, 0.9, sz);
+  scena.add(lusterko); efektyZderzenia.push(lusterko);
+  const vX = losuj(2.2, 4) * bok, vZ = losuj(-2, 2), vY = losuj(3.5, 5);
+  const t0 = performance.now();
+  const lec = () => {
+    const t = (performance.now() - t0) / 1000;
+    const y = 0.9 + vY * t - 9.8 * t * t;
+    lusterko.position.set(sx + vX * t, Math.max(0.08, y), sz + vZ * t);
+    lusterko.rotation.x += 0.35; lusterko.rotation.z += 0.28;
+    if (y > 0.08) { requestAnimationFrame(lec); return; }
+    /* wylądowało — dla śmiechu dostaje własny mały płomyk */
+    zapalPlomien(lusterko.position.x, lusterko.position.z, 0.35, 4.5);
+  };
+  lec();
+}
+
+function odleciecDebris(x, z) {
+  for (let k = 0; k < 4; k++) {
+    const kawalek = new THREE.Mesh(new THREE.BoxGeometry(losuj(0.15, 0.35), losuj(0.1, 0.2), losuj(0.15, 0.35)),
+      new THREE.MeshLambertMaterial({ color: losEl([0x2A2E33, 0x8B9096, 0x1E2933]) }));
+    const a = losuj(0, Math.PI * 2), r = losuj(1.5, 3.5);
+    kawalek.position.set(x + Math.cos(a) * r, 0.1, z + Math.sin(a) * r);
+    kawalek.rotation.set(losuj(0, 3), losuj(0, 3), losuj(0, 3));
+    scena.add(kawalek); efektyZderzenia.push(kawalek);
+  }
+}
+
+/* niewielki, stały płomień (np. na lusterku) — sam gaśnie po podanym czasie */
+function zapalPlomien(x, z, skala, czasZycia) {
+  const mat = new THREE.MeshBasicMaterial({ color: 0xE8862A, transparent: true, opacity: 0.9 });
+  const m = new THREE.Mesh(new THREE.ConeGeometry(0.13 * skala, 0.32 * skala, 6), mat);
+  m.position.set(x, 0.16 * skala, z);
+  scena.add(m); efektyZderzenia.push(m);
+  const t0 = performance.now(); let faza = Math.random() * 10;
+  const migot = () => {
+    const t = (performance.now() - t0) / 1000;
+    faza += 0.25;
+    m.scale.set(1 + Math.sin(faza * 3) * 0.2, 1 + Math.sin(faza * 4.3) * 0.35, 1 + Math.sin(faza * 2.7) * 0.2);
+    mat.color.setHex(Math.random() < 0.6 ? 0xE8862A : 0xD8232A);
+    mat.opacity = Math.max(0, 0.9 * (1 - t / czasZycia));
+    if (t < czasZycia) { requestAnimationFrame(migot); return; }
+    scena.remove(m); const idx = efektyZderzenia.indexOf(m); if (idx >= 0) efektyZderzenia.splice(idx, 1);
+  };
+  migot();
+}
+
 function zgnieceAuto() {
   stanGry.pociagUderzyl = true;
   policjaAktywna = true;   // zamraża resztę symulacji tak jak interwencja policji
   auto.v = 0;
+  usunEfektyZderzenia();
   stworzDymUderzenia(auto.x, auto.z);
-  wstrzasKamery = 0.9;
+  wstrzasKamery = 1.1;
+  odlecLusterko(auto.x, auto.z, auto.kier);
+  odleciecDebris(auto.x, auto.z);
+
+  /* wypalony ślad na jezdni pod wrakiem */
+  const slad = new THREE.Mesh(new THREE.CircleGeometry(2.8, 18),
+    new THREE.MeshBasicMaterial({ color: 0x15130F, transparent: true, opacity: 0.5 }));
+  slad.rotation.x = -Math.PI / 2; slad.position.set(auto.x, 0.022, auto.z);
+  scena.add(slad); efektyZderzenia.push(slad);
+
+  /* wgniecenia — kilka losowych, ciemnych wgnieceń wprost na karoserii */
+  for (let k = 0; k < 5; k++) {
+    const w = new THREE.Mesh(new THREE.BoxGeometry(losuj(0.28, 0.55), losuj(0.18, 0.36), losuj(0.28, 0.55)),
+      new THREE.MeshLambertMaterial({ color: 0x14171B }));
+    w.position.set(losuj(-0.75, 0.75), losuj(0.35, 1.15), losuj(-1.8, 1.8));
+    w.rotation.set(losuj(0, 1), losuj(0, 1), losuj(0, 1));
+    auto.mesh.add(w);
+  }
+
   const t0 = performance.now();
   const zgniot = () => {
     const t = Math.min(1, (performance.now() - t0) / 900);
-    const s = Math.max(0.1, 1 - t * 0.82);
-    auto.mesh.scale.set(1 + t * 0.35, s, 1 + t * 0.15);
-    auto.mesh.position.y = -(1 - s) * 0.32;
-    kamera.position.set(auto.x + 8, 4.5, auto.z + 8);
-    kamera.lookAt(auto.x, 0.3, auto.z);
+    const sy = Math.max(0.13, 1 - t * 0.8);
+    auto.mesh.scale.set(1 + t * 0.48, sy, 1 + t * 0.24);
+    auto.mesh.position.y = -(1 - sy) * 0.34;
+    auto.mesh.rotation.z = Math.sin(t * 9) * (1 - t) * 0.28;
+    kamera.position.set(auto.x + 7.5, 4.4, auto.z + 7.5);
+    kamera.lookAt(auto.x, 0.5, auto.z);
     if (t < 1) { requestAnimationFrame(zgniot); return; }
+    rozpocznijPozar(auto.x, auto.z);
+  };
+  zgniot();
+}
+
+/* pięć sekund płonącego wraku — ogień + gęsty, unoszący się czarny dym —
+   dopiero po tym pokazujemy, że misja jest niezaliczona */
+function rozpocznijPozar(x, z) {
+  const CZAS_POZARU = 5.0;
+  const plomienie = [];
+  for (let k = 0; k < 5; k++) {
+    const mat = new THREE.MeshBasicMaterial({ color: 0xE8862A, transparent: true, opacity: 0.88 });
+    const m = new THREE.Mesh(new THREE.ConeGeometry(0.34, 0.85, 7), mat);
+    const bx = x + losuj(-0.7, 0.7), bz = z + losuj(-1.3, 1.3);
+    m.position.set(bx, 0.5, bz);
+    scena.add(m); efektyZderzenia.push(m);
+    plomienie.push({ mesh: m, mat, faza: Math.random() * 10, bx, bz });
+  }
+  const t0 = performance.now();
+  const petlaPozaru = () => {
+    const t = (performance.now() - t0) / 1000;
+    plomienie.forEach(p => {
+      p.faza += 0.26;
+      p.mesh.scale.set(1 + Math.sin(p.faza * 3) * 0.22, 1 + Math.sin(p.faza * 4.4) * 0.4, 1 + Math.sin(p.faza * 2.6) * 0.22);
+      p.mesh.position.x = p.bx + Math.sin(p.faza * 5) * 0.09;
+      p.mesh.position.z = p.bz + Math.cos(p.faza * 4) * 0.09;
+      p.mat.color.setHex(Math.random() < 0.6 ? 0xE8862A : 0xD8232A);
+    });
+    /* gęsty, ciemny dym unoszący się znad ognia dłużej niż zwykły pył */
+    if (Math.random() < 0.35) {
+      const mat = new THREE.MeshBasicMaterial({ color: 0x1C1C1E, transparent: true, opacity: 0.5 });
+      const m = new THREE.Mesh(new THREE.CircleGeometry(0.55, 8), mat);
+      m.rotation.x = -Math.PI / 2;
+      m.position.set(x + losuj(-0.9, 0.9), 1.1, z + losuj(-1.1, 1.1));
+      scena.add(m);
+      pylKolizji.push({ mesh: m, mat, t: 0, vx: losuj(-0.3, 0.3), vz: losuj(-0.3, 0.3),
+        startOpacity: 0.5, wznoszenie: 2.4, wzrost: 1.5, zycie: 3.2 });
+    }
+    if (t < CZAS_POZARU) { requestAnimationFrame(petlaPozaru); return; }
     setTimeout(() => {
       podpowiedz('Nie zdałeś', 'Wjazd na tory przy opuszczonych szlabanach to jedno z najcięższych wykroczeń — pociąg nie mógł ani zahamować, ani ominąć przeszkody.');
       setTimeout(() => zakonczMisje(false), 900);
-    }, 700);
+    }, 300);
   };
-  zgniot();
+  petlaPozaru();
 }
 
 /* ============================================================
@@ -4068,7 +4194,11 @@ function uruchom() {
     [12, 'wytyczanie ulic…', () => inicjujScene()],
     [38, 'stawianie budynków i chodników…', () => budujMiasto()],
     [64, 'montaż znaków drogowych…', () => { budujKatalogZnakow(); }],
-    [80, 'uruchamianie sygnalizacji…', () => { auto.mesh = zbudujAuto(0xF2F3F5, true); stworzRuch(6); stworzPieszych(8); }],
+    [80, 'uruchamianie sygnalizacji…', () => {
+      auto.mesh = zbudujAuto(0xF2F3F5, true);
+      auto.mesh.userData.liczbaOryginalnychCzesci = auto.mesh.children.length;
+      stworzRuch(6); stworzPieszych(8);
+    }],
     [94, 'zapraszanie mieszkańców…', () => { budujListeMisji(); budujPrzepisy(); }],
     [100, 'gotowe', () => {
       document.getElementById('ladowanie').style.display = 'none';
