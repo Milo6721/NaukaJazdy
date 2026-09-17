@@ -618,6 +618,16 @@ Z('A12a', 'A-12a', 'Zwężenie jezdni — dwustronne', 'A',
     g.beginPath(); g.moveTo(74, 196); g.lineTo(100, 118); g.lineTo(112, 118); g.lineTo(92, 196); g.closePath(); g.fill();
     g.beginPath(); g.moveTo(182, 196); g.lineTo(156, 118); g.lineTo(144, 118); g.lineTo(164, 196); g.closePath(); g.fill(); });
 
+Z('D5', 'D-5', 'Pierwszeństwo na zwężonym odcinku', 'D',
+  'Jezdnia zwęża się do jednego pasa, ale to Ty masz pierwszeństwo — gruba strzałka to Twój kierunek, cienka to strona, która musi ustąpić.',
+  g => { tloProstokat(g, R_NIEB); strzalka(g, 128, 176, 130, 0, 26, R_BIAL);
+    strzalka(g, 128, 90, 90, Math.PI, 13, R_CZER); });
+
+Z('B31', 'B-31', 'Pierwszeństwo dla nadjeżdżających z przeciwka', 'B',
+  'Jezdnia zwęża się do jednego pasa i to nie Ty masz pierwszeństwo — ustąp pojazdom nadjeżdżającym z przeciwnego kierunku i poczekaj na swoją kolej.',
+  g => { tloKolo(g, R_CZER, R_BIAL, 30); strzalka(g, 128, 176, 90, Math.PI, 13, R_CZER);
+    strzalka(g, 128, 90, 130, 0, 26, R_CZAR); });
+
 Z('A14', 'A-14', 'Roboty na drodze', 'A',
   'Prace drogowe. Spodziewaj się ludzi na jezdni, maszyn i zmienionej organizacji ruchu.',
   g => { tloTrojkat(g);
@@ -989,6 +999,20 @@ function texAsfalt() {
   t.wrapS = t.wrapT = THREE.RepeatWrapping; t.repeat.set(8, 8);
   return t;
 }
+/* gładsza, ciemniejsza nawierzchnia dla drogi szybkiego ruchu — mniej ziarna,
+   chłodniejszy odcień, żeby od razu było widać, że to inna klasa drogi */
+function texAsfaltSzybki() {
+  const c = nowyCanvas(512), g = c.getContext('2d');
+  g.fillStyle = '#20242B'; g.fillRect(0, 0, 512, 512);
+  for (let i = 0; i < 2600; i++) {
+    const v = 24 + Math.random() * 14;
+    g.fillStyle = 'rgba(' + v + ',' + (v + 3) + ',' + (v + 10) + ',.5)';
+    g.fillRect(Math.random() * 512, Math.random() * 512, 2.6, 2.6);
+  }
+  const t = new THREE.CanvasTexture(c);
+  t.wrapS = t.wrapT = THREE.RepeatWrapping; t.repeat.set(8, 8);
+  return t;
+}
 function texTrawa() {
   const c = nowyCanvas(256), g = c.getContext('2d');
   g.fillStyle = '#2E4A2A'; g.fillRect(0, 0, 256, 256);
@@ -1065,6 +1089,7 @@ function inicjujScene() {
 
   MAT = {
     asfalt: new THREE.MeshLambertMaterial({ map: texAsfalt() }),
+    asfaltSzybki: new THREE.MeshLambertMaterial({ map: texAsfaltSzybki() }),
     chodnik: new THREE.MeshLambertMaterial({ color: 0x9A9A94 }),
     krawez: new THREE.MeshLambertMaterial({ color: 0xC3C3BB }),
     biala: new THREE.MeshBasicMaterial({ color: 0xEFEFE6 }),
@@ -1121,7 +1146,7 @@ function budujMiasto() {
   for (let i = 0; i < NG; i++) {
     const poz = new THREE.Mesh(new THREE.PlaneGeometry(dl, POL_HALF * 2), MAT.asfalt);
     poz.rotation.x = -Math.PI / 2; poz.position.set(0, 0, P(i)); poz.receiveShadow = true; G.add(poz);
-    const pion = new THREE.Mesh(new THREE.PlaneGeometry(POL_HALF * 2, dl), MAT.asfalt);
+    const pion = new THREE.Mesh(new THREE.PlaneGeometry(POL_HALF * 2, dl), i === ULICA_SZYBKA ? MAT.asfaltSzybki : MAT.asfalt);
     pion.rotation.x = -Math.PI / 2; pion.position.set(P(i), 0.001, 0); pion.receiveShadow = true; G.add(pion);
   }
 
@@ -1138,9 +1163,15 @@ function budujMiasto() {
 
   budujOznaczeniaPoziome(G);
   budujTory(G);
+  budujPasyRozdzielajace(G);
   budujSkrzyzowania(G);
   budujLatarnie(G);
   rozstawZnaki(G);
+  budujStrefyZwezen(G);
+  budujZnakiTematyczne(G);
+  budujSlepaUliczke(G);
+  budujSzpalerLesny(G);
+  budujRozdwojenie(G, 2, 2, 3);
   swiat.grupaTrasa = new THREE.Group(); scena.add(swiat.grupaTrasa);
 }
 
@@ -1182,6 +1213,12 @@ function materialBudynku(paletaIdx, w, h, d) {
 
 function budujKwartal(G, cx, cz, bok, i, j) {
   const wolny = bok - CHOD * 2;
+  /* dwa dedykowane, tematyczne kwartały — żeby miasto nie składało się z samych
+     losowych bloków biurowych */
+  if (i === 0 && j === 4) { budujSzpital(G, cx, cz, wolny); return; }
+  if (i === 5 && j === 0) { budujStacjePaliw(G, cx, cz, wolny); return; }
+  /* leśna ulica — całe pasmo kwartałów wzdłuż Brzozowej (j=6) to gęsty las, nie zabudowa */
+  if (j === 5 && i >= 1 && i <= 4) { budujLas(G, cx, cz, wolny); return; }
   const seed = (i * 13 + j * 7) % 5;
   if (seed === 4) {
     const traw = new THREE.Mesh(new THREE.PlaneGeometry(wolny, wolny),
@@ -1198,6 +1235,95 @@ function budujKwartal(G, cx, cz, bok, i, j) {
     swiat.budynki.push(postawBudynek(G, gx, gz, w, w, losuj(12, 50)));
   }
 }
+
+/* szpital — biały blok z czerwonym krzyżem na fasadzie, do pary ze znakiem D-21 */
+function budujSzpital(G, cx, cz, wolny) {
+  const w = wolny * 0.6, d = wolny * 0.6, h = 22;
+  const mat = new THREE.MeshLambertMaterial({ color: 0xF2F3EE });
+  const bryla = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat);
+  bryla.position.set(cx, h / 2 + 0.34, cz); bryla.castShadow = true; bryla.receiveShadow = true; G.add(bryla);
+  const matKrzyz = new THREE.MeshLambertMaterial({ color: 0xD52B1E, emissive: 0xD52B1E, emissiveIntensity: 0.25 });
+  const pion = new THREE.Mesh(new THREE.BoxGeometry(1.6, 5, 0.3), matKrzyz);
+  const poziomK = new THREE.Mesh(new THREE.BoxGeometry(5, 1.6, 0.3), matKrzyz);
+  [pion, poziomK].forEach(m => { m.position.set(cx, h * 0.62, cz + d / 2 + 0.16); G.add(m); });
+  const wjazd = new THREE.Mesh(new THREE.BoxGeometry(w * 0.7, 3.2, 0.4),
+    new THREE.MeshLambertMaterial({ color: 0x7FB8D8, transparent: true, opacity: 0.7 }));
+  wjazd.position.set(cx, 1.6, cz + d / 2 + 0.2); G.add(wjazd);
+  swiat.budynki.push({ x: cx, z: cz, w, d });
+}
+
+/* stacja paliw — wiata na słupach + dystrybutory, do pary ze znakiem D-23 */
+function budujStacjePaliw(G, cx, cz, wolny) {
+  const matWiata = new THREE.MeshLambertMaterial({ color: 0xE8862A });
+  const matSlup = new THREE.MeshLambertMaterial({ color: 0xD8D8D0 });
+  const dach = new THREE.Mesh(new THREE.BoxGeometry(wolny * 0.62, 0.35, wolny * 0.4), matWiata);
+  dach.position.set(cx, 4.6, cz); dach.castShadow = true; G.add(dach);
+  [[-1, -1], [1, -1], [-1, 1], [1, 1]].forEach(([sx, sz]) => {
+    const slup = new THREE.Mesh(new THREE.CylinderGeometry(0.16, 0.16, 4.5, 8), matSlup);
+    slup.position.set(cx + sx * wolny * 0.26, 2.25, cz + sz * wolny * 0.16); G.add(slup);
+  });
+  [-2.4, 2.4].forEach(ox => {
+    const dystrybutor = new THREE.Mesh(new THREE.BoxGeometry(0.7, 1.5, 0.5),
+      new THREE.MeshLambertMaterial({ color: 0xF2F3EE }));
+    dystrybutor.position.set(cx + ox, 0.75 + 0.34, cz); dystrybutor.castShadow = true; G.add(dystrybutor);
+    const pasek = new THREE.Mesh(new THREE.BoxGeometry(0.72, 0.3, 0.52), matWiata);
+    pasek.position.set(cx + ox, 1.1 + 0.34, cz); G.add(pasek);
+  });
+  const sklep = postawBudynek(G, cx + wolny * 0.28, cz + wolny * 0.32, wolny * 0.32, wolny * 0.28, 6.5);
+  swiat.budynki.push(sklep);
+  swiat.budynki.push({ x: cx, z: cz, w: wolny * 0.62, d: wolny * 0.4 });
+}
+
+/* leśny kwartał — gęste drzewostany + poszycie zamiast trawnika, do pary z lasem przy ulicy */
+function budujLas(G, cx, cz, wolny) {
+  const podloze = new THREE.Mesh(new THREE.PlaneGeometry(wolny, wolny),
+    new THREE.MeshLambertMaterial({ color: 0x2C4324 }));
+  podloze.rotation.x = -Math.PI / 2; podloze.position.set(cx, 0.34, cz); podloze.receiveShadow = true; G.add(podloze);
+  for (let k = 0; k < 15; k++)
+    drzewo(G, cx + losuj(-wolny / 2.15, wolny / 2.15), cz + losuj(-wolny / 2.15, wolny / 2.15));
+  const matKrzak = new THREE.MeshLambertMaterial({ color: 0x35502B });
+  for (let k = 0; k < 10; k++) {
+    const krzak = new THREE.Mesh(new THREE.SphereGeometry(losuj(0.5, 0.9), 6, 5), matKrzak);
+    krzak.position.set(cx + losuj(-wolny / 2.2, wolny / 2.2), 0.6, cz + losuj(-wolny / 2.2, wolny / 2.2));
+    krzak.scale.y = 0.65; G.add(krzak);
+  }
+}
+
+/* dodatkowy szpaler drzew tuż przy jezdni Brzozowej — żeby las było widać
+   już z samochodu, nie tylko w oddali między budynkami */
+function budujSzpalerLesny(G) {
+  const z = P(6);
+  const x0 = P(1) - SP / 2, x1 = P(4) + SP / 2;
+  for (let x = x0; x <= x1; x += 5.5) {
+    drzewo(G, x + losuj(-1, 1), z - (POL_HALF + CHOD + 2.2) + losuj(-0.6, 0.6));
+    drzewo(G, x + losuj(-1, 1), z + (POL_HALF + CHOD + 2.2) + losuj(-0.6, 0.6));
+  }
+}
+
+/* wyspa dzieląca — bulwar, który fizycznie rozdziela się na dwie osobne jezdnie
+   wokół zielonej wyspy i z powrotem się łączy. Promień mniejszy niż PAS, więc
+   ruch AI trzymający się swoich pasów przejeżdża obok bez specjalnej trasy —
+   tylko gracz musi świadomie objechać ją z właściwej strony */
+function budujRozdwojenie(G, i0, jOd, jDo) {
+  const x = P(i0);
+  const z0 = P(jOd) + POL_HALF + 9, z1 = P(jDo) - POL_HALF - 9;
+  const dlugosc = z1 - z0, cz = (z0 + z1) / 2, promien = 1.35;
+  if (dlugosc < 10) return;
+  const wyspa = new THREE.Mesh(new THREE.CylinderGeometry(promien, promien, 0.5, 18),
+    new THREE.MeshLambertMaterial({ color: 0x8FA07A }));
+  wyspa.scale.z = dlugosc / (2 * promien);
+  wyspa.position.set(x, 0.25, cz); wyspa.castShadow = true; wyspa.receiveShadow = true; G.add(wyspa);
+  const krawez = new THREE.Mesh(new THREE.CylinderGeometry(promien + 0.2, promien + 0.2, 0.22, 18), MAT.krawez);
+  krawez.scale.z = dlugosc / (2 * (promien + 0.2));
+  krawez.position.set(x, 0.11, cz); G.add(krawez);
+  const matZywoplot = new THREE.MeshLambertMaterial({ color: 0x35502B });
+  for (let t = -0.9; t <= 0.9; t += 0.3) {
+    const krzak = new THREE.Mesh(new THREE.SphereGeometry(0.55, 6, 5), matZywoplot);
+    krzak.position.set(x, 0.72, cz + t * dlugosc / 2); krzak.scale.y = 0.7; G.add(krzak);
+  }
+  swiat.budynki.push({ x, z: cz, w: promien * 2, d: dlugosc });
+}
+
 function postawBudynek(G, x, z, w, d, h) {
   const paletaIdx = Math.floor(Math.random() * PALETA_BUD.length);
   const mat = materialBudynku(paletaIdx, w, h, d);
@@ -1242,6 +1368,103 @@ function budujTory(G) {
     szyna.rotation.x = -Math.PI / 2; szyna.position.set(0, 0.025, z + off);
     G.add(szyna);
   });
+}
+
+/* pas rozdzielający — betonowa wysepka na środku każdej z głównych ulic (D-1),
+   z przerwami przy skrzyżowaniach. To one wizualnie odróżniają „bulwary” od reszty miasta */
+function budujPasyRozdzielajace(G) {
+  const mat = new THREE.MeshLambertMaterial({ color: 0xB9B9AE });
+  const geoPoz = dl => new THREE.BoxGeometry(dl, 0.22, 0.55);
+  const geoPion = dl => new THREE.BoxGeometry(0.55, 0.22, dl);
+  const odcinek = (x, z, poziomo, dl) => {
+    if (dl <= 2) return;
+    const m = new THREE.Mesh(poziomo ? geoPoz(dl) : geoPion(dl), mat);
+    m.position.set(x, 0.13, z); m.receiveShadow = true; G.add(m);
+  };
+  PRIORYTET_PION.forEach(i => {
+    for (let s = 0; s < NG - 1; s++) {
+      const a = P(s) + POL_HALF + 9, b = P(s + 1) - POL_HALF - 9;
+      odcinek(P(i), (a + b) / 2, false, b - a);
+    }
+  });
+  PRIORYTET_POZ.forEach(j => {
+    for (let s = 0; s < NG - 1; s++) {
+      const a = P(s) + POL_HALF + 9, b = P(s + 1) - POL_HALF - 9;
+      odcinek((a + b) / 2, P(j), true, b - a);
+    }
+  });
+}
+
+/* ---------- fizyczne zwężenia jezdni (A-12a + D-5/B-31) ----------
+   Jeden pas zablokowany pachołkami i barierą na kawałku ulicy — trzeba
+   się wcisnąć na pas sąsiedni. Kierunek "kierBlokowany" musi ustąpić
+   (B-31), przeciwny ma pierwszeństwo (D-5). */
+function znakPrzedZwezeniem(G, id, cx, cz, d, odleglosc) {
+  const [dx, dz] = DIRV[d];
+  znakPrzyJezdni(G, id, cx - dx * odleglosc, cz - dz * odleglosc, d);
+}
+function budujStrefeZwezenia(G, cx, cz, dlugosc, kierBlokowany) {
+  const poziomo = (kierBlokowany === 0 || kierBlokowany === 2);
+  const [dx, dz] = DIRV[kierBlokowany];
+  const blokPas = poziomo ? (dx > 0 ? PAS : -PAS) : (dz > 0 ? -PAS : PAS);
+  const bx = poziomo ? cx : cx + blokPas;
+  const bz = poziomo ? cz + blokPas : cz;
+
+  const matBariera = new THREE.MeshLambertMaterial({ color: 0xF2F2E8 });
+  const matStozek = new THREE.MeshLambertMaterial({ color: 0xE8862A });
+  const bariera = new THREE.Mesh(
+    poziomo ? new THREE.BoxGeometry(dlugosc, 0.55, 0.22) : new THREE.BoxGeometry(0.22, 0.55, dlugosc), matBariera);
+  bariera.position.set(bx, 0.4, bz); bariera.castShadow = true; G.add(bariera);
+  const pasy = new THREE.Mesh(
+    poziomo ? new THREE.BoxGeometry(dlugosc, 0.14, 0.24) : new THREE.BoxGeometry(0.24, 0.14, dlugosc), matStozek);
+  pasy.position.set(bx, 0.42, bz); G.add(pasy);
+
+  const ileStozkow = Math.max(3, Math.round(dlugosc / 3.4));
+  const geoStozek = new THREE.ConeGeometry(0.24, 0.5, 8);
+  for (let k = 0; k < ileStozkow; k++) {
+    const t = (k / (ileStozkow - 1) - 0.5) * dlugosc;
+    const s = new THREE.Mesh(geoStozek, matStozek);
+    s.position.set(poziomo ? bx + t : bx, 0.25, poziomo ? bz : bz + t);
+    s.castShadow = true; G.add(s);
+  }
+  /* prawdziwa, fizyczna przeszkoda — ta sama logika kolizji co przy budynkach */
+  swiat.budynki.push({ x: bx, z: bz, w: poziomo ? dlugosc : 1.7, d: poziomo ? 1.7 : dlugosc });
+
+  const priorytet = (kierBlokowany + 2) % 4;
+  const polDl = dlugosc / 2;
+  znakPrzedZwezeniem(G, 'A12a', cx, cz, kierBlokowany, polDl + 20);
+  znakPrzedZwezeniem(G, 'A12a', cx, cz, priorytet, polDl + 20);
+  znakPrzedZwezeniem(G, 'B31', cx, cz, kierBlokowany, polDl + 6);
+  znakPrzedZwezeniem(G, 'D5', cx, cz, priorytet, polDl + 6);
+}
+function budujStrefyZwezen(G) {
+  /* ulica Kwiatowa (i=1, strefa 30) — zablokowany pas jadących na południe */
+  budujStrefeZwezenia(G, P(1), (P(3) + P(4)) / 2, 20, 1);
+  /* ulica Targowa (j=5) — zablokowany pas jadących na zachód */
+  budujStrefeZwezenia(G, (P(3) + P(4)) / 2, P(5), 18, 2);
+}
+
+/* znaki dowiązane wprost do konkretnych budynków, żeby nie polegać wyłącznie
+   na losowym rozrzucie katalogu */
+function budujZnakiTematyczne(G) {
+  znakPrzyJezdni(G, 'D21', P(0), (P(4) + P(5)) / 2, 1, null, 1.2);
+  znakPrzyJezdni(G, 'D21', P(0), (P(4) + P(5)) / 2, 3, null, 1.2);
+  znakPrzyJezdni(G, 'D23', (P(4) + P(5)) / 2, P(0), 0, null, 1.2);
+  znakPrzyJezdni(G, 'D23', (P(4) + P(5)) / 2, P(0), 2, null, 1.2);
+}
+
+/* prawdziwa ślepa uliczka — fizyczna bariera na północnym końcu ulicy Sosnowej (i=0),
+   dokładnie tam, gdzie stoi znak D-4a */
+function budujSlepaUliczke(G) {
+  const x = P(0), z = -KRANIEC + 4;
+  const matBariera = new THREE.MeshLambertMaterial({ color: 0xF2F2E8 });
+  const bariera = new THREE.Mesh(new THREE.BoxGeometry(POL_HALF * 2 - 1, 0.7, 0.3), matBariera);
+  bariera.position.set(x, 0.5, z); bariera.castShadow = true; G.add(bariera);
+  const pasy = new THREE.Mesh(new THREE.BoxGeometry(POL_HALF * 2 - 1, 0.2, 0.32),
+    new THREE.MeshLambertMaterial({ color: 0xD8232A }));
+  pasy.position.set(x, 0.55, z); G.add(pasy);
+  swiat.budynki.push({ x, z, w: POL_HALF * 2 - 1, d: 1 });
+  znakPrzyJezdni(G, 'D4a', x, z + 9, 3, null, 1.2);
 }
 
 function budujOznaczeniaPoziome(G) {
